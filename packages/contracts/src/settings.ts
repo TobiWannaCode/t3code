@@ -75,7 +75,7 @@ export const ExecutionModeSsh = Schema.Struct({
   identityFile: TrimmedString.pipe(Schema.withDecodingDefault(() => "")),
 });
 
-export const ExecutionMode = Schema.Union(ExecutionModeLocal, ExecutionModeWsl, ExecutionModeSsh);
+export const ExecutionMode = Schema.Union([ExecutionModeLocal, ExecutionModeWsl, ExecutionModeSsh]);
 export type ExecutionMode = typeof ExecutionMode.Type;
 
 export const DEFAULT_EXECUTION_MODE: ExecutionMode = { kind: "local" };
@@ -180,7 +180,7 @@ const ModelSelectionPatch = Schema.Union([
   }),
 ]);
 
-const ExecutionModePatch = Schema.Union(
+const ExecutionModePatch = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("local") }),
   Schema.Struct({
     kind: Schema.Literal("wsl"),
@@ -193,7 +193,7 @@ const ExecutionModePatch = Schema.Union(
     user: Schema.optionalKey(Schema.String),
     identityFile: Schema.optionalKey(Schema.String),
   }),
-);
+]);
 
 const CodexSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
