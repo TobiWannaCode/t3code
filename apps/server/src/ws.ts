@@ -25,6 +25,7 @@ import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 
 import { CheckpointDiffQuery } from "./checkpointing/Services/CheckpointDiffQuery";
 import { ServerConfig } from "./config";
+import { getServerPlatform, refreshServerPlatform } from "./platformInfo";
 import { GitCore } from "./git/Services/GitCore";
 import { GitManager } from "./git/Services/GitManager";
 import { GitStatusBroadcaster } from "./git/Services/GitStatusBroadcaster";
@@ -346,6 +347,7 @@ const WsRpcLayer = WsRpcGroup.toLayer(
           otlpMetricsEnabled: config.otlpMetricsUrl !== undefined,
         },
         settings,
+        platform: getServerPlatform(),
       };
     });
 
@@ -531,6 +533,36 @@ const WsRpcLayer = WsRpcGroup.toLayer(
         observeRpcEffect(WS_METHODS.serverUpdateSettings, serverSettings.updateSettings(patch), {
           "rpc.aggregate": "server",
         }),
+      [WS_METHODS.serverTestSshConnection]: (input) =>
+        observeRpcEffect(
+          WS_METHODS.serverTestSshConnection,
+          Effect.tryPromise(async () => {
+            const { spawnSync } = await import("node:child_process");
+            const sshArgs = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"];
+            if (input.identityFile) sshArgs.push("-i", input.identityFile);
+            if (input.port) sshArgs.push("-p", String(input.port));
+            const userHost = input.user ? `${input.user}@${input.host}` : input.host;
+            sshArgs.push(userHost, "echo", "ok");
+            const result = spawnSync("ssh", sshArgs, {
+              encoding: "utf8",
+              timeout: 10_000,
+              stdio: ["ignore", "pipe", "pipe"],
+            });
+            if (result.status === 0) return { success: true };
+            const error = result.stderr?.trim() || result.error?.message || "Connection failed";
+            return { success: false, error };
+          }),
+          { "rpc.aggregate": "server" },
+        ),
+      [WS_METHODS.serverRefreshWslDistros]: (_input) =>
+        observeRpcEffect(
+          WS_METHODS.serverRefreshWslDistros,
+          Effect.sync(() => {
+            const platform = refreshServerPlatform();
+            return { distros: platform.wslDistros };
+          }),
+          { "rpc.aggregate": "server" },
+        ),
       [WS_METHODS.projectsSearchEntries]: (input) =>
         observeRpcEffect(
           WS_METHODS.projectsSearchEntries,

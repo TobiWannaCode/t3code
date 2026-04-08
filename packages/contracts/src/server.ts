@@ -5,6 +5,7 @@ import {
   ProjectId,
   ThreadId,
   TrimmedNonEmptyString,
+  TrimmedString,
 } from "./baseSchemas";
 import { KeybindingRule, ResolvedKeybindingsConfig } from "./keybindings";
 import { EditorId } from "./editor";
@@ -82,6 +83,13 @@ export const ServerObservability = Schema.Struct({
 });
 export type ServerObservability = typeof ServerObservability.Type;
 
+export const ServerPlatform = Schema.Struct({
+  os: Schema.Literals(["win32", "darwin", "linux"]),
+  isWsl: Schema.Boolean,
+  wslDistros: Schema.Array(TrimmedNonEmptyString),
+});
+export type ServerPlatform = typeof ServerPlatform.Type;
+
 export const ServerConfig = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   keybindingsConfigPath: TrimmedNonEmptyString,
@@ -91,6 +99,7 @@ export const ServerConfig = Schema.Struct({
   availableEditors: Schema.Array(EditorId),
   observability: ServerObservability,
   settings: ServerSettings,
+  platform: ServerPlatform,
 });
 export type ServerConfig = typeof ServerConfig.Type;
 
@@ -204,3 +213,24 @@ export const ServerProviderUpdatedPayload = Schema.Struct({
   providers: ServerProviders,
 });
 export type ServerProviderUpdatedPayload = typeof ServerProviderUpdatedPayload.Type;
+
+// ── Remote execution RPCs ───────────────────────────────────────
+
+export const TestSshConnectionInput = Schema.Struct({
+  host: TrimmedNonEmptyString,
+  port: Schema.optional(Schema.Number),
+  user: Schema.optional(TrimmedString),
+  identityFile: Schema.optional(TrimmedString),
+});
+export type TestSshConnectionInput = typeof TestSshConnectionInput.Type;
+
+export const TestSshConnectionResult = Schema.Struct({
+  success: Schema.Boolean,
+  error: Schema.optional(Schema.String),
+});
+export type TestSshConnectionResult = typeof TestSshConnectionResult.Type;
+
+export const RefreshWslDistrosResult = Schema.Struct({
+  distros: Schema.Array(TrimmedNonEmptyString),
+});
+export type RefreshWslDistrosResult = typeof RefreshWslDistrosResult.Type;

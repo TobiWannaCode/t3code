@@ -1412,6 +1412,7 @@ const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
         ...(input.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
         runtimeMode: input.runtimeMode,
         binaryPath,
+        executionMode: codexSettings.executionMode,
         ...(homePath ? { homePath } : {}),
         ...(input.modelSelection?.provider === "codex"
           ? { model: input.modelSelection.model }

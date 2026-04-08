@@ -1,6 +1,8 @@
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import readline from "node:readline";
+import type { ExecutionMode } from "@t3tools/contracts";
 import { readCodexAccountSnapshot, type CodexAccountSnapshot } from "./codexAccount";
+import { wrapCommand } from "../remoteExecution";
 
 interface JsonRpcProbeResponse {
   readonly id?: unknown;
@@ -43,16 +45,24 @@ export function killCodexChildProcess(child: ChildProcessWithoutNullStreams): vo
 export async function probeCodexAccount(input: {
   readonly binaryPath: string;
   readonly homePath?: string;
+  readonly executionMode?: ExecutionMode;
   readonly signal?: AbortSignal;
 }): Promise<CodexAccountSnapshot> {
   return await new Promise((resolve, reject) => {
-    const child = spawn(input.binaryPath, ["app-server"], {
-      env: {
-        ...process.env,
-        ...(input.homePath ? { CODEX_HOME: input.homePath } : {}),
-      },
-      stdio: ["pipe", "pipe", "pipe"],
+    const env = {
+      ...process.env,
+      ...(input.homePath ? { CODEX_HOME: input.homePath } : {}),
+    };
+    const wrapped = wrapCommand(input.executionMode ?? { kind: "local" }, {
+      binary: input.binaryPath,
+      args: ["app-server"],
+      env,
       shell: process.platform === "win32",
+    });
+    const child = spawn(wrapped.binary, [...wrapped.args], {
+      env: wrapped.env ?? env,
+      stdio: ["pipe", "pipe", "pipe"],
+      shell: wrapped.shell ?? process.platform === "win32",
     });
     const output = readline.createInterface({ input: child.stdout });
 

@@ -56,11 +56,40 @@ const makeBinaryPathSetting = (fallback: string) =>
     Schema.withDecodingDefault(() => fallback),
   );
 
+// ── Execution Mode ──────────────────────────────────────────────
+
+export const ExecutionModeLocal = Schema.Struct({
+  kind: Schema.Literal("local"),
+});
+
+export const ExecutionModeWsl = Schema.Struct({
+  kind: Schema.Literal("wsl"),
+  distro: TrimmedString.pipe(Schema.withDecodingDefault(() => "")),
+});
+
+export const ExecutionModeSsh = Schema.Struct({
+  kind: Schema.Literal("ssh"),
+  host: TrimmedNonEmptyString,
+  port: Schema.Number.pipe(Schema.withDecodingDefault(() => 22)),
+  user: TrimmedString.pipe(Schema.withDecodingDefault(() => "")),
+  identityFile: TrimmedString.pipe(Schema.withDecodingDefault(() => "")),
+});
+
+export const ExecutionMode = Schema.Union(ExecutionModeLocal, ExecutionModeWsl, ExecutionModeSsh);
+export type ExecutionMode = typeof ExecutionMode.Type;
+
+export const DEFAULT_EXECUTION_MODE: ExecutionMode = { kind: "local" };
+
+// ── Provider Settings ───────────────────────────────────────────
+
 export const CodexSettings = Schema.Struct({
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(() => true)),
   binaryPath: makeBinaryPathSetting("codex"),
   homePath: TrimmedString.pipe(Schema.withDecodingDefault(() => "")),
   customModels: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(() => [])),
+  executionMode: ExecutionMode.pipe(
+    Schema.withDecodingDefault(() => DEFAULT_EXECUTION_MODE),
+  ),
 });
 export type CodexSettings = typeof CodexSettings.Type;
 
@@ -68,6 +97,9 @@ export const ClaudeSettings = Schema.Struct({
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(() => true)),
   binaryPath: makeBinaryPathSetting("claude"),
   customModels: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(() => [])),
+  executionMode: ExecutionMode.pipe(
+    Schema.withDecodingDefault(() => DEFAULT_EXECUTION_MODE),
+  ),
 });
 export type ClaudeSettings = typeof ClaudeSettings.Type;
 
@@ -148,17 +180,34 @@ const ModelSelectionPatch = Schema.Union([
   }),
 ]);
 
+const ExecutionModePatch = Schema.Union(
+  Schema.Struct({ kind: Schema.Literal("local") }),
+  Schema.Struct({
+    kind: Schema.Literal("wsl"),
+    distro: Schema.optionalKey(Schema.String),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("ssh"),
+    host: Schema.String,
+    port: Schema.optionalKey(Schema.Number),
+    user: Schema.optionalKey(Schema.String),
+    identityFile: Schema.optionalKey(Schema.String),
+  }),
+);
+
 const CodexSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
   binaryPath: Schema.optionalKey(Schema.String),
   homePath: Schema.optionalKey(Schema.String),
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
+  executionMode: Schema.optionalKey(ExecutionModePatch),
 });
 
 const ClaudeSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
   binaryPath: Schema.optionalKey(Schema.String),
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
+  executionMode: Schema.optionalKey(ExecutionModePatch),
 });
 
 export const ServerSettingsPatch = Schema.Struct({

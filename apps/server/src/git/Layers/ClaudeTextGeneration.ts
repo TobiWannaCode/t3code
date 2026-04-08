@@ -32,6 +32,7 @@ import {
 import { normalizeClaudeModelOptionsWithCapabilities } from "@t3tools/shared/model";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { getClaudeModelCapabilities } from "../../provider/Layers/ClaudeProvider.ts";
+import { wrapCommand } from "../../remoteExecution.ts";
 
 const CLAUDE_TIMEOUT_MS = 180_000;
 
@@ -101,9 +102,10 @@ const makeClaudeTextGeneration = Effect.gen(function* () {
     ).pipe(Effect.catch(() => Effect.undefined));
 
     const runClaudeCommand = Effect.fn("runClaudeJson.runClaudeCommand")(function* () {
-      const command = ChildProcess.make(
-        claudeSettings?.binaryPath || "claude",
-        [
+      const executionMode = claudeSettings?.executionMode ?? { kind: "local" as const };
+      const wrapped = wrapCommand(executionMode, {
+        binary: claudeSettings?.binaryPath || "claude",
+        args: [
           "-p",
           "--output-format",
           "json",
@@ -115,9 +117,15 @@ const makeClaudeTextGeneration = Effect.gen(function* () {
           ...(Object.keys(settings).length > 0 ? ["--settings", JSON.stringify(settings)] : []),
           "--dangerously-skip-permissions",
         ],
+        cwd,
+        shell: process.platform === "win32",
+      });
+      const command = ChildProcess.make(
+        wrapped.binary,
+        [...wrapped.args],
         {
-          cwd,
-          shell: process.platform === "win32",
+          cwd: wrapped.cwd ?? cwd,
+          shell: wrapped.shell ?? process.platform === "win32",
           stdin: {
             stream: Stream.encodeText(Stream.make(prompt)),
           },

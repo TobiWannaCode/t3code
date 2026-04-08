@@ -10,6 +10,8 @@ import { Cache, Duration, Effect, Equal, Layer, Option, Result, Schema, Stream }
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
 import { query as claudeQuery } from "@anthropic-ai/claude-agent-sdk";
+import { wrapCommand, type CommandSpec } from "../../remoteExecution";
+import { resolveClaudeExecutablePath } from "../claudeWrapperScript";
 
 import {
   buildServerProvider,
@@ -398,14 +400,18 @@ const CAPABILITIES_PROBE_TIMEOUT_MS = 8_000;
  * This is used as a fallback when `claude auth status` does not include
  * subscription type information.
  */
-const probeClaudeCapabilities = (binaryPath: string) => {
+const probeClaudeCapabilities = (claudeSettings: ClaudeSettings) => {
+  const executablePath = resolveClaudeExecutablePath(
+    claudeSettings.executionMode,
+    claudeSettings.binaryPath,
+  );
   const abort = new AbortController();
   return Effect.tryPromise(async () => {
     const q = claudeQuery({
       prompt: ".",
       options: {
         persistSession: false,
-        pathToClaudeCodeExecutable: binaryPath,
+        pathToClaudeCodeExecutable: executablePath,
         abortController: abort,
         maxTurns: 0,
         settingSources: [],
@@ -435,14 +441,19 @@ const runClaudeCommand = Effect.fn("runClaudeCommand")(function* (args: Readonly
     Effect.flatMap((service) => service.getSettings),
     Effect.map((settings) => settings.providers.claudeAgent),
   );
-  const command = ChildProcess.make(claudeSettings.binaryPath, [...args], {
+  const wrapped = wrapCommand(claudeSettings.executionMode, {
+    binary: claudeSettings.binaryPath,
+    args: [...args],
     shell: process.platform === "win32",
   });
-  return yield* spawnAndCollect(claudeSettings.binaryPath, command);
+  const command = ChildProcess.make(wrapped.binary, [...wrapped.args], {
+    shell: wrapped.shell ?? process.platform === "win32",
+  });
+  return yield* spawnAndCollect(wrapped.binary, command);
 });
 
 export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(function* (
-  resolveSubscriptionType?: (binaryPath: string) => Effect.Effect<string | undefined>,
+  resolveSubscriptionType?: (claudeSettings: ClaudeSettings) => Effect.Effect<string | undefined>,
 ): Effect.fn.Return<
   ServerProvider,
   ServerSettingsError,
@@ -560,7 +571,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   }
 
   if (!subscriptionType && resolveSubscriptionType) {
-    subscriptionType = yield* resolveSubscriptionType(claudeSettings.binaryPath);
+    subscriptionType = yield* resolveSubscriptionType(claudeSettings);
   }
 
   const resolvedModels = adjustModelsForSubscription(models, subscriptionType);
@@ -632,12 +643,16 @@ export const ClaudeProviderLive = Layer.effect(
     const subscriptionProbeCache = yield* Cache.make({
       capacity: 1,
       timeToLive: Duration.minutes(5),
-      lookup: (binaryPath: string) =>
-        probeClaudeCapabilities(binaryPath).pipe(Effect.map((r) => r?.subscriptionType)),
+      lookup: (_cacheKey: string) =>
+        serverSettings.getSettings.pipe(
+          Effect.map((s) => s.providers.claudeAgent),
+          Effect.flatMap((cs) => probeClaudeCapabilities(cs)),
+          Effect.map((r) => r?.subscriptionType),
+        ),
     });
 
-    const checkProvider = checkClaudeProviderStatus((binaryPath) =>
-      Cache.get(subscriptionProbeCache, binaryPath),
+    const checkProvider = checkClaudeProviderStatus((claudeSettings) =>
+      Cache.get(subscriptionProbeCache, claudeSettings.binaryPath),
     ).pipe(
       Effect.provideService(ServerSettingsService, serverSettings),
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),

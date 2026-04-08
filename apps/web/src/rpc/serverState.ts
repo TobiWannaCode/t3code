@@ -6,6 +6,7 @@ import {
   type ServerConfigStreamEvent,
   type ServerConfigUpdatedPayload,
   type ServerLifecycleWelcomePayload,
+  type ServerPlatform,
   type ServerProvider,
   type ServerProviderUpdatedPayload,
   type ServerSettings,
@@ -53,6 +54,8 @@ const selectKeybindingsConfigPath = (config: ServerConfig | null) =>
 const selectObservability = (config: ServerConfig | null) => config?.observability ?? null;
 const selectProviders = (config: ServerConfig | null) =>
   config?.providers ?? EMPTY_SERVER_PROVIDERS;
+const selectPlatform = (config: ServerConfig | null): ServerPlatform | null =>
+  config?.platform ?? null;
 const selectSettings = (config: ServerConfig | null): ServerSettings =>
   config?.settings ?? DEFAULT_SERVER_SETTINGS;
 
@@ -280,6 +283,10 @@ export function useServerAvailableEditors(): ReadonlyArray<EditorId> {
 
 export function useServerKeybindingsConfigPath(): string | null {
   return useAtomValue(serverConfigAtom, selectKeybindingsConfigPath);
+}
+
+export function useServerPlatform(): ServerPlatform | null {
+  return useAtomValue(serverConfigAtom, selectPlatform);
 }
 
 export function useServerObservability(): ServerConfig["observability"] | null {

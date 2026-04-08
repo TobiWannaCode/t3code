@@ -64,12 +64,15 @@ import {
   TerminalWriteInput,
 } from "./terminal";
 import {
+  RefreshWslDistrosResult,
   ServerConfigStreamEvent,
   ServerConfig,
   ServerLifecycleStreamEvent,
   ServerProviderUpdatedPayload,
   ServerUpsertKeybindingInput,
   ServerUpsertKeybindingResult,
+  TestSshConnectionInput,
+  TestSshConnectionResult,
 } from "./server";
 import { ServerSettings, ServerSettingsError, ServerSettingsPatch } from "./settings";
 
@@ -111,6 +114,8 @@ export const WS_METHODS = {
   serverUpsertKeybinding: "server.upsertKeybinding",
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
+  serverTestSshConnection: "server.testSshConnection",
+  serverRefreshWslDistros: "server.refreshWslDistros",
 
   // Streaming subscriptions
   subscribeGitStatus: "subscribeGitStatus",
@@ -334,12 +339,24 @@ export const WsSubscribeServerLifecycleRpc = Rpc.make(WS_METHODS.subscribeServer
   stream: true,
 });
 
+export const WsServerTestSshConnectionRpc = Rpc.make(WS_METHODS.serverTestSshConnection, {
+  payload: TestSshConnectionInput,
+  success: TestSshConnectionResult,
+});
+
+export const WsServerRefreshWslDistrosRpc = Rpc.make(WS_METHODS.serverRefreshWslDistros, {
+  payload: Schema.Struct({}),
+  success: RefreshWslDistrosResult,
+});
+
 export const WsRpcGroup = RpcGroup.make(
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,
   WsServerUpsertKeybindingRpc,
   WsServerGetSettingsRpc,
   WsServerUpdateSettingsRpc,
+  WsServerTestSshConnectionRpc,
+  WsServerRefreshWslDistrosRpc,
   WsProjectsSearchEntriesRpc,
   WsProjectsWriteFileRpc,
   WsShellOpenInEditorRpc,

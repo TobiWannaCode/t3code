@@ -13,6 +13,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   PROVIDER_DISPLAY_NAMES,
+  type ExecutionMode,
   type ProviderKind,
   type ServerProvider,
   type ServerProviderModel,
@@ -62,6 +63,7 @@ import {
   useServerAvailableEditors,
   useServerKeybindingsConfigPath,
   useServerObservability,
+  useServerPlatform,
   useServerProviders,
 } from "../../rpc/serverState";
 
@@ -530,12 +532,14 @@ export function GeneralSettingsPanel() {
     codex: Boolean(
       settings.providers.codex.binaryPath !== DEFAULT_UNIFIED_SETTINGS.providers.codex.binaryPath ||
       settings.providers.codex.homePath !== DEFAULT_UNIFIED_SETTINGS.providers.codex.homePath ||
-      settings.providers.codex.customModels.length > 0,
+      settings.providers.codex.customModels.length > 0 ||
+      settings.providers.codex.executionMode.kind !== "local",
     ),
     claudeAgent: Boolean(
       settings.providers.claudeAgent.binaryPath !==
         DEFAULT_UNIFIED_SETTINGS.providers.claudeAgent.binaryPath ||
-      settings.providers.claudeAgent.customModels.length > 0,
+      settings.providers.claudeAgent.customModels.length > 0 ||
+      settings.providers.claudeAgent.executionMode.kind !== "local",
     ),
   });
   const [customModelInputByProvider, setCustomModelInputByProvider] = useState<
@@ -546,6 +550,12 @@ export function GeneralSettingsPanel() {
   });
   const [customModelErrorByProvider, setCustomModelErrorByProvider] = useState<
     Partial<Record<ProviderKind, string | null>>
+  >({});
+  const [sshTestResultByProvider, setSshTestResultByProvider] = useState<
+    Partial<Record<ProviderKind, { success: boolean; error?: string } | null>>
+  >({});
+  const [isSshTestingByProvider, setIsSshTestingByProvider] = useState<
+    Partial<Record<ProviderKind, boolean>>
   >({});
   const [isRefreshingProviders, setIsRefreshingProviders] = useState(false);
   const refreshingRef = useRef(false);
@@ -569,6 +579,7 @@ export function GeneralSettingsPanel() {
   const availableEditors = useServerAvailableEditors();
   const observability = useServerObservability();
   const serverProviders = useServerProviders();
+  const serverPlatform = useServerPlatform();
   const codexHomePath = settings.providers.codex.homePath;
   const logsDirectoryPath = observability?.logsDirectoryPath ?? null;
   const diagnosticsDescription = (() => {
@@ -1205,6 +1216,289 @@ export function GeneralSettingsPanel() {
               >
                 <CollapsibleContent>
                   <div className="space-y-0">
+                    {/* Execution mode selector */}
+                    <div className="border-t border-border/60 px-4 py-3 sm:px-5">
+                      <div className="block">
+                        <span className="text-xs font-medium text-foreground">Execution mode</span>
+                        <Select
+                          value={providerCard.providerConfig.executionMode.kind}
+                          onValueChange={(value) => {
+                            let executionMode: ExecutionMode;
+                            if (value === "wsl") {
+                              executionMode = { kind: "wsl", distro: "" };
+                            } else if (value === "ssh") {
+                              executionMode = {
+                                kind: "ssh",
+                                host: "" as never,
+                                port: 22,
+                                user: "",
+                                identityFile: "",
+                              };
+                            } else {
+                              executionMode = { kind: "local" };
+                            }
+                            updateSettings({
+                              providers: {
+                                ...settings.providers,
+                                [providerCard.provider]: {
+                                  ...settings.providers[providerCard.provider],
+                                  executionMode,
+                                },
+                              },
+                            });
+                            setSshTestResultByProvider((e) => ({
+                              ...e,
+                              [providerCard.provider]: null,
+                            }));
+                          }}
+                        >
+                          <SelectTrigger className="mt-1.5 w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectPopup>
+                            <SelectItem value="local">Local</SelectItem>
+                            {serverPlatform?.os === "win32" ? (
+                              <SelectItem
+                                value="wsl"
+                                disabled={
+                                  serverPlatform.wslDistros.length === 0 &&
+                                  serverPlatform.os === "win32"
+                                }
+                              >
+                                WSL
+                                {serverPlatform.wslDistros.length === 0
+                                  ? " (no distros found)"
+                                  : ""}
+                              </SelectItem>
+                            ) : null}
+                            <SelectItem value="ssh">SSH</SelectItem>
+                          </SelectPopup>
+                        </Select>
+                        <span className="mt-1 block text-xs text-muted-foreground">
+                          {providerCard.providerConfig.executionMode.kind === "local"
+                            ? "Run the provider binary on this machine."
+                            : providerCard.providerConfig.executionMode.kind === "wsl"
+                              ? "Run the provider binary inside a WSL distribution."
+                              : "Run the provider binary on a remote server via SSH."}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* WSL distro selector */}
+                    {providerCard.providerConfig.executionMode.kind === "wsl" &&
+                    serverPlatform?.wslDistros &&
+                    serverPlatform.wslDistros.length > 0 ? (
+                      <div className="border-t border-border/60 px-4 py-3 sm:px-5">
+                        <div className="block">
+                          <span className="text-xs font-medium text-foreground">
+                            WSL distribution
+                          </span>
+                          <Select
+                            value={providerCard.providerConfig.executionMode.distro || ""}
+                            onValueChange={(value) =>
+                              updateSettings({
+                                providers: {
+                                  ...settings.providers,
+                                  [providerCard.provider]: {
+                                    ...settings.providers[providerCard.provider],
+                                    executionMode: {
+                                      ...providerCard.providerConfig.executionMode,
+                                      distro: value,
+                                    },
+                                  },
+                                },
+                              })
+                            }
+                          >
+                            <SelectTrigger className="mt-1.5 w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectPopup>
+                              <SelectItem value="">Default</SelectItem>
+                              {serverPlatform.wslDistros.map((distro) => (
+                                <SelectItem key={distro} value={distro}>
+                                  {distro}
+                                </SelectItem>
+                              ))}
+                            </SelectPopup>
+                          </Select>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {/* SSH configuration */}
+                    {providerCard.providerConfig.executionMode.kind === "ssh" ? (
+                      <div className="border-t border-border/60 px-4 py-3 sm:px-5 space-y-3">
+                        <label className="block">
+                          <span className="text-xs font-medium text-foreground">SSH host</span>
+                          <Input
+                            className="mt-1.5"
+                            value={providerCard.providerConfig.executionMode.host ?? ""}
+                            onChange={(event) =>
+                              updateSettings({
+                                providers: {
+                                  ...settings.providers,
+                                  [providerCard.provider]: {
+                                    ...settings.providers[providerCard.provider],
+                                    executionMode: {
+                                      ...providerCard.providerConfig.executionMode,
+                                      host: event.target.value,
+                                    },
+                                  },
+                                },
+                              })
+                            }
+                            placeholder="hostname or IP"
+                            spellCheck={false}
+                          />
+                        </label>
+                        <div className="grid grid-cols-2 gap-3">
+                          <label className="block">
+                            <span className="text-xs font-medium text-foreground">Port</span>
+                            <Input
+                              className="mt-1.5"
+                              type="number"
+                              value={providerCard.providerConfig.executionMode.port ?? 22}
+                              onChange={(event) =>
+                                updateSettings({
+                                  providers: {
+                                    ...settings.providers,
+                                    [providerCard.provider]: {
+                                      ...settings.providers[providerCard.provider],
+                                      executionMode: {
+                                        ...providerCard.providerConfig.executionMode,
+                                        port: Number(event.target.value) || 22,
+                                      },
+                                    },
+                                  },
+                                })
+                              }
+                              placeholder="22"
+                            />
+                          </label>
+                          <label className="block">
+                            <span className="text-xs font-medium text-foreground">User</span>
+                            <Input
+                              className="mt-1.5"
+                              value={providerCard.providerConfig.executionMode.user ?? ""}
+                              onChange={(event) =>
+                                updateSettings({
+                                  providers: {
+                                    ...settings.providers,
+                                    [providerCard.provider]: {
+                                      ...settings.providers[providerCard.provider],
+                                      executionMode: {
+                                        ...providerCard.providerConfig.executionMode,
+                                        user: event.target.value,
+                                      },
+                                    },
+                                  },
+                                })
+                              }
+                              placeholder="username"
+                              spellCheck={false}
+                            />
+                          </label>
+                        </div>
+                        <label className="block">
+                          <span className="text-xs font-medium text-foreground">
+                            Identity file (optional)
+                          </span>
+                          <Input
+                            className="mt-1.5"
+                            value={providerCard.providerConfig.executionMode.identityFile ?? ""}
+                            onChange={(event) =>
+                              updateSettings({
+                                providers: {
+                                  ...settings.providers,
+                                  [providerCard.provider]: {
+                                    ...settings.providers[providerCard.provider],
+                                    executionMode: {
+                                      ...providerCard.providerConfig.executionMode,
+                                      identityFile: event.target.value,
+                                    },
+                                  },
+                                },
+                              })
+                            }
+                            placeholder="~/.ssh/id_rsa"
+                            spellCheck={false}
+                          />
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={
+                              !providerCard.providerConfig.executionMode.host ||
+                              isSshTestingByProvider[providerCard.provider]
+                            }
+                            onClick={() => {
+                              const mode = providerCard.providerConfig.executionMode;
+                              if (mode.kind !== "ssh" || !mode.host) return;
+                              setIsSshTestingByProvider((e) => ({
+                                ...e,
+                                [providerCard.provider]: true,
+                              }));
+                              setSshTestResultByProvider((e) => ({
+                                ...e,
+                                [providerCard.provider]: null,
+                              }));
+                              void ensureNativeApi()
+                                .server.testSshConnection({
+                                  host: mode.host,
+                                  ...(mode.port ? { port: mode.port } : {}),
+                                  ...(mode.user ? { user: mode.user } : {}),
+                                  ...(mode.identityFile
+                                    ? { identityFile: mode.identityFile }
+                                    : {}),
+                                })
+                                .then((result) => {
+                                  setSshTestResultByProvider((e) => ({
+                                    ...e,
+                                    [providerCard.provider]: result,
+                                  }));
+                                })
+                                .catch((error: unknown) => {
+                                  setSshTestResultByProvider((e) => ({
+                                    ...e,
+                                    [providerCard.provider]: {
+                                      success: false,
+                                      error: String(error),
+                                    },
+                                  }));
+                                })
+                                .finally(() => {
+                                  setIsSshTestingByProvider((e) => ({
+                                    ...e,
+                                    [providerCard.provider]: false,
+                                  }));
+                                });
+                            }}
+                          >
+                            {isSshTestingByProvider[providerCard.provider]
+                              ? "Testing..."
+                              : "Test connection"}
+                          </Button>
+                          {sshTestResultByProvider[providerCard.provider] ? (
+                            <span
+                              className={cn(
+                                "text-xs",
+                                sshTestResultByProvider[providerCard.provider]?.success
+                                  ? "text-success"
+                                  : "text-destructive",
+                              )}
+                            >
+                              {sshTestResultByProvider[providerCard.provider]?.success
+                                ? "Connected successfully"
+                                : sshTestResultByProvider[providerCard.provider]?.error ??
+                                  "Connection failed"}
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
+
                     <div className="border-t border-border/60 px-4 py-3 sm:px-5">
                       <label
                         htmlFor={`provider-install-${providerCard.provider}-binary-path`}
@@ -1212,6 +1506,11 @@ export function GeneralSettingsPanel() {
                       >
                         <span className="text-xs font-medium text-foreground">
                           {providerDisplayName} binary path
+                          {providerCard.providerConfig.executionMode.kind === "wsl"
+                            ? " (inside WSL)"
+                            : providerCard.providerConfig.executionMode.kind === "ssh"
+                              ? " (on remote host)"
+                              : ""}
                         </span>
                         <Input
                           id={`provider-install-${providerCard.provider}-binary-path`}

@@ -32,6 +32,8 @@ import {
   type CodexAccountSnapshot,
 } from "./provider/codexAccount";
 import { buildCodexInitializeParams, killCodexChildProcess } from "./provider/codexAppServer";
+import type { ExecutionMode } from "@t3tools/contracts";
+import { wrapCommand } from "./remoteExecution";
 
 export { buildCodexInitializeParams } from "./provider/codexAppServer";
 export { readCodexAccountSnapshot, resolveCodexModelForAccount } from "./provider/codexAccount";
@@ -124,6 +126,7 @@ export interface CodexAppServerStartSessionInput {
   readonly resumeCursor?: unknown;
   readonly binaryPath: string;
   readonly homePath?: string;
+  readonly executionMode?: ExecutionMode;
   readonly runtimeMode: RuntimeMode;
 }
 
@@ -459,19 +462,29 @@ export class CodexAppServerManager extends EventEmitter<CodexAppServerManagerEve
 
       const codexBinaryPath = input.binaryPath;
       const codexHomePath = input.homePath;
+      const executionMode = input.executionMode ?? { kind: "local" as const };
       this.assertSupportedCodexCliVersion({
         binaryPath: codexBinaryPath,
         cwd: resolvedCwd,
         ...(codexHomePath ? { homePath: codexHomePath } : {}),
+        executionMode,
       });
-      const child = spawn(codexBinaryPath, ["app-server"], {
+      const env = {
+        ...process.env,
+        ...(codexHomePath ? { CODEX_HOME: codexHomePath } : {}),
+      };
+      const wrapped = wrapCommand(executionMode, {
+        binary: codexBinaryPath,
+        args: ["app-server"],
         cwd: resolvedCwd,
-        env: {
-          ...process.env,
-          ...(codexHomePath ? { CODEX_HOME: codexHomePath } : {}),
-        },
-        stdio: ["pipe", "pipe", "pipe"],
+        env,
         shell: process.platform === "win32",
+      });
+      const child = spawn(wrapped.binary, [...wrapped.args], {
+        cwd: wrapped.cwd ?? resolvedCwd,
+        env: wrapped.env ?? env,
+        stdio: ["pipe", "pipe", "pipe"],
+        shell: wrapped.shell ?? process.platform === "win32",
       });
       const output = readline.createInterface({ input: child.stdout });
 
@@ -1294,6 +1307,7 @@ export class CodexAppServerManager extends EventEmitter<CodexAppServerManagerEve
     readonly binaryPath: string;
     readonly cwd: string;
     readonly homePath?: string;
+    readonly executionMode?: ExecutionMode;
   }): void {
     assertSupportedCodexCliVersion(input);
   }
@@ -1526,15 +1540,24 @@ function assertSupportedCodexCliVersion(input: {
   readonly binaryPath: string;
   readonly cwd: string;
   readonly homePath?: string;
+  readonly executionMode?: ExecutionMode;
 }): void {
-  const result = spawnSync(input.binaryPath, ["--version"], {
+  const env = {
+    ...process.env,
+    ...(input.homePath ? { CODEX_HOME: input.homePath } : {}),
+  };
+  const wrapped = wrapCommand(input.executionMode ?? { kind: "local" }, {
+    binary: input.binaryPath,
+    args: ["--version"],
     cwd: input.cwd,
-    env: {
-      ...process.env,
-      ...(input.homePath ? { CODEX_HOME: input.homePath } : {}),
-    },
-    encoding: "utf8",
+    env,
     shell: process.platform === "win32",
+  });
+  const result = spawnSync(wrapped.binary, [...wrapped.args], {
+    cwd: wrapped.cwd ?? input.cwd,
+    env: wrapped.env ?? env,
+    encoding: "utf8",
+    shell: wrapped.shell ?? process.platform === "win32",
     stdio: ["ignore", "pipe", "pipe"],
     timeout: CODEX_VERSION_CHECK_TIMEOUT_MS,
     maxBuffer: 1024 * 1024,

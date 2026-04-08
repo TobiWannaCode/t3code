@@ -32,6 +32,7 @@ import {
   spawnAndCollect,
   type CommandResult,
 } from "../providerSnapshot";
+import { wrapCommand } from "../../remoteExecution";
 import { makeManagedServerProvider } from "../makeManagedServerProvider";
 import {
   formatCodexCliUpgradeMessage,
@@ -304,6 +305,7 @@ const CAPABILITIES_PROBE_TIMEOUT_MS = 8_000;
 const probeCodexCapabilities = (input: {
   readonly binaryPath: string;
   readonly homePath?: string;
+  readonly executionMode?: import("@t3tools/contracts").ExecutionMode;
 }) =>
   Effect.tryPromise((signal) => probeCodexAccount({ ...input, signal })).pipe(
     Effect.timeoutOption(CAPABILITIES_PROBE_TIMEOUT_MS),
@@ -319,14 +321,21 @@ const runCodexCommand = Effect.fn("runCodexCommand")(function* (args: ReadonlyAr
   const codexSettings = yield* settingsService.getSettings.pipe(
     Effect.map((settings) => settings.providers.codex),
   );
-  const command = ChildProcess.make(codexSettings.binaryPath, [...args], {
+  const env = {
+    ...process.env,
+    ...(codexSettings.homePath ? { CODEX_HOME: codexSettings.homePath } : {}),
+  };
+  const wrapped = wrapCommand(codexSettings.executionMode, {
+    binary: codexSettings.binaryPath,
+    args: [...args],
     shell: process.platform === "win32",
-    env: {
-      ...process.env,
-      ...(codexSettings.homePath ? { CODEX_HOME: codexSettings.homePath } : {}),
-    },
+    env,
   });
-  return yield* spawnAndCollect(codexSettings.binaryPath, command);
+  const command = ChildProcess.make(wrapped.binary, [...wrapped.args], {
+    shell: wrapped.shell ?? process.platform === "win32",
+    env: wrapped.env ?? env,
+  });
+  return yield* spawnAndCollect(wrapped.binary, command);
 });
 
 export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(function* (
@@ -545,13 +554,17 @@ export const CodexProviderLive = Layer.effect(
     const accountProbeCache = yield* Cache.make({
       capacity: 4,
       timeToLive: Duration.minutes(5),
-      lookup: (key: string) => {
-        const [binaryPath, homePath] = JSON.parse(key) as [string, string | undefined];
-        return probeCodexCapabilities({
-          binaryPath,
-          ...(homePath ? { homePath } : {}),
-        });
-      },
+      lookup: (_key: string) =>
+        serverSettings.getSettings.pipe(
+          Effect.map((s) => s.providers.codex),
+          Effect.flatMap((cs) =>
+            probeCodexCapabilities({
+              binaryPath: cs.binaryPath,
+              ...(cs.homePath ? { homePath: cs.homePath } : {}),
+              executionMode: cs.executionMode,
+            }),
+          ),
+        ),
     });
 
     const checkProvider = checkCodexProviderStatus((input) =>

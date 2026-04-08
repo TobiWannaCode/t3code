@@ -31,6 +31,7 @@ import {
 import { getCodexModelCapabilities } from "../../provider/Layers/CodexProvider.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { normalizeCodexModelOptionsWithCapabilities } from "@t3tools/shared/model";
+import { wrapCommand } from "../../remoteExecution.ts";
 
 const CODEX_GIT_TEXT_GENERATION_REASONING_EFFORT = "low";
 const CODEX_TIMEOUT_MS = 180_000;
@@ -161,9 +162,14 @@ const makeCodexTextGeneration = Effect.gen(function* () {
       );
       const reasoningEffort =
         modelSelection.options?.reasoningEffort ?? CODEX_GIT_TEXT_GENERATION_REASONING_EFFORT;
-      const command = ChildProcess.make(
-        codexSettings?.binaryPath || "codex",
-        [
+      const executionMode = codexSettings?.executionMode ?? { kind: "local" as const };
+      const env = {
+        ...process.env,
+        ...(codexSettings?.homePath ? { CODEX_HOME: codexSettings.homePath } : {}),
+      };
+      const wrapped = wrapCommand(executionMode, {
+        binary: codexSettings?.binaryPath || "codex",
+        args: [
           "exec",
           "--ephemeral",
           "-s",
@@ -180,13 +186,17 @@ const makeCodexTextGeneration = Effect.gen(function* () {
           ...imagePaths.flatMap((imagePath) => ["--image", imagePath]),
           "-",
         ],
+        env,
+        cwd,
+        shell: process.platform === "win32",
+      });
+      const command = ChildProcess.make(
+        wrapped.binary,
+        [...wrapped.args],
         {
-          env: {
-            ...process.env,
-            ...(codexSettings?.homePath ? { CODEX_HOME: codexSettings.homePath } : {}),
-          },
-          cwd,
-          shell: process.platform === "win32",
+          env: wrapped.env ?? env,
+          cwd: wrapped.cwd ?? cwd,
+          shell: wrapped.shell ?? process.platform === "win32",
           stdin: {
             stream: Stream.encodeText(Stream.make(prompt)),
           },

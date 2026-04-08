@@ -25,9 +25,12 @@ import type {
   ProjectWriteFileResult,
 } from "./project";
 import type {
+  RefreshWslDistrosResult,
   ServerConfig,
   ServerProviderUpdatedPayload,
   ServerUpsertKeybindingResult,
+  TestSshConnectionInput,
+  TestSshConnectionResult,
 } from "./server";
 import type {
   TerminalClearInput,
@@ -180,6 +183,8 @@ export interface NativeApi {
     upsertKeybinding: (input: ServerUpsertKeybindingInput) => Promise<ServerUpsertKeybindingResult>;
     getSettings: () => Promise<ServerSettings>;
     updateSettings: (patch: ServerSettingsPatch) => Promise<ServerSettings>;
+    testSshConnection: (input: TestSshConnectionInput) => Promise<TestSshConnectionResult>;
+    refreshWslDistros: () => Promise<RefreshWslDistrosResult>;
   };
   orchestration: {
     getSnapshot: () => Promise<OrchestrationReadModel>;
