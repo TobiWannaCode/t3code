@@ -105,6 +105,11 @@ const makeEntityId = <Brand extends string>(brand: Brand) => {
   return TrimmedNonEmptyString.pipe(Schema.brand(brand));
 };
 
+export const ChatFolderId = makeEntityId("ChatFolderId");
+export type ChatFolderId = typeof ChatFolderId.Type;
+export const ChatOrganizationId = makeEntityId("ChatOrganizationId");
+export type ChatOrganizationId = typeof ChatOrganizationId.Type;
+
 export const ThreadId = makeEntityId("ThreadId");
 export type ThreadId = typeof ThreadId.Type;
 export const ProjectId = makeEntityId("ProjectId");

@@ -1,3 +1,4 @@
+import type { ChatOrganization } from "@t3tools/contracts";
 /**
  * ProjectionSnapshotQuery - Read-model snapshot query service interface.
  *
@@ -77,6 +78,7 @@ export interface ProjectionThreadDetailQuery {
  * ProjectionSnapshotQueryShape - Service API for read-model snapshots.
  */
 export interface ProjectionSnapshotQueryShape {
+  readonly getChatOrganization: () => Effect.Effect<ChatOrganization, ProjectionRepositoryError>;
   /** Read the latest request or resolution without loading the thread history. */
   readonly getUserInputActivity: (input: {
     readonly threadId: ThreadId;

@@ -1,3 +1,4 @@
+import { DraftFolderTarget, draftFolderSendError } from "./explorer/DraftFolderTarget";
 import { useLoadBalancedEnvironment } from "../hooks/useLoadBalancedEnvironment";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import type { UsageLimitSourceSnapshots } from "@t3tools/contracts";
@@ -7220,6 +7221,11 @@ export default function ChatView(props: ChatViewProps) {
     queuedMessage?: QueuedComposerMessage,
   ) => {
     e?.preventDefault();
+    const folderError = draftFolderSendError(draftId ?? null, activeThread?.environmentId);
+    if (folderError) {
+      toastManager.add({ type: "error", title: "Choose a draft folder", description: folderError });
+      return;
+    }
     // Typed out in full rather than picked from the menu. Attachments or contexts
     // mean the user is sending a prompt, so those go through as usual.
     if (
@@ -7948,6 +7954,9 @@ export default function ChatView(props: ChatViewProps) {
               ...(isLocalDraftThread
                 ? {
                     createThread: {
+                      ...(draftThread?.chatFolderTarget
+                        ? { chatFolderId: draftThread.chatFolderTarget.folderId }
+                        : {}),
                       projectId: activeProject.id,
                       title,
                       modelSelection: threadCreateModelSelection,
@@ -9628,6 +9637,7 @@ export default function ChatView(props: ChatViewProps) {
                         : undefined
                     }
                   >
+                    <DraftFolderTarget draftId={draftId ?? null} />
                     <ComposerSurface.Shell contextStrip={showComposerContextStrip}>
                       <ComposerSurface.Host>
                         <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">

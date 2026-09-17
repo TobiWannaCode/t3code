@@ -184,3 +184,45 @@ describe("applyShellStreamEvent", () => {
     expect(next).toBe(baseSnapshot);
   });
 });
+
+describe("chat organization shell replacements", () => {
+  it("accepts filtered sequence gaps without rolling back newer organization revisions", () => {
+    const organization = { revision: 4, folders: [], memberships: [] };
+    const next = applyShellStreamEvent(baseSnapshot, {
+      kind: "chat-organization-replaced",
+      sequence: 50,
+      organization,
+    });
+    expect(next.chatOrganization).toBe(organization);
+    const stale = applyShellStreamEvent(next, {
+      kind: "chat-organization-replaced",
+      sequence: 60,
+      organization: { revision: 3, folders: [], memberships: [] },
+    });
+    expect(stale.chatOrganization).toBe(organization);
+    expect(stale.snapshotSequence).toBe(60);
+    expect(
+      applyShellStreamEvent(stale, {
+        kind: "chat-organization-replaced",
+        sequence: 60,
+        organization: { revision: 5, folders: [], memberships: [] },
+      }),
+    ).toBe(stale);
+  });
+  it("retains organization when a thread is removed from the live shell", async () => {
+    const { ChatFolderId } = await import("@t3tools/contracts");
+    const organization = {
+      revision: 1,
+      folders: [],
+      memberships: [{ threadId: stubThread.id, folderId: ChatFolderId.make("archived-folder") }],
+    };
+    const snapshot = { ...baseSnapshot, threads: [stubThread], chatOrganization: organization };
+    const next = applyShellStreamEvent(snapshot, {
+      kind: "thread-removed",
+      sequence: 1,
+      threadId: stubThread.id,
+    });
+    expect(next.threads).toEqual([]);
+    expect(next.chatOrganization).toBe(organization);
+  });
+});

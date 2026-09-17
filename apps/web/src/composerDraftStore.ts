@@ -1,3 +1,4 @@
+import { ChatFolderId } from "@t3tools/contracts";
 import { elementContextToPreviewAnnotation } from "./lib/elementContext";
 import {
   ElementContextDetails,
@@ -309,7 +310,13 @@ type LegacyPersistedComposerDraftStoreState = PersistedComposerDraftStoreState &
   LegacyStickyModelFields &
   LegacyV2StoreFields;
 
+const DraftChatFolderTarget = Schema.Struct({
+  environmentId: EnvironmentId,
+  folderId: ChatFolderId,
+});
+const isDraftChatFolderTarget = Schema.is(DraftChatFolderTarget);
 const PersistedDraftThreadState = Schema.Struct({
+  chatFolderTarget: Schema.optionalKey(Schema.NullOr(DraftChatFolderTarget)),
   threadId: ThreadId,
   environmentId: Schema.String,
   projectId: ProjectId,
@@ -437,6 +444,7 @@ export function composerDraftHasUserContent(
  * environment/worktree configuration before the first send.
  */
 export interface DraftSessionState {
+  chatFolderTarget?: { environmentId: EnvironmentId; folderId: ChatFolderId } | null;
   threadId: ThreadId;
   environmentId: EnvironmentId;
   projectId: ProjectId;
@@ -547,6 +555,7 @@ interface ComposerDraftStoreState {
   setDraftThreadContext: (
     threadRef: ComposerThreadTarget,
     options: {
+      chatFolderTarget?: DraftSessionState["chatFolderTarget"];
       branch?: string | null;
       worktreePath?: string | null;
       projectRef?: ScopedProjectRef;
@@ -1538,6 +1547,9 @@ function createDraftThreadState(
     options?.environmentSelection ?? existingThread?.environmentSelection;
   return {
     threadId,
+    ...(existingThread?.chatFolderTarget
+      ? { chatFolderTarget: existingThread.chatFolderTarget }
+      : {}),
     environmentId: projectRef.environmentId,
     projectId: projectRef.projectId,
     logicalProjectKey,
@@ -1581,6 +1593,7 @@ function isDraftThreadPromoting(draftThread: DraftThreadState | null | undefined
 function draftThreadsEqual(left: DraftThreadState | undefined, right: DraftThreadState): boolean {
   return (
     !!left &&
+    left.chatFolderTarget === right.chatFolderTarget &&
     left.threadId === right.threadId &&
     left.environmentId === right.environmentId &&
     left.projectId === right.projectId &&
@@ -1716,6 +1729,9 @@ function normalizePersistedDraftThreads(
       }
       const normalizedEnvironmentId = environmentId as EnvironmentId;
       draftThreadsByThreadKey[threadKey] = {
+        ...(isDraftChatFolderTarget(candidateDraftThread.chatFolderTarget)
+          ? { chatFolderTarget: candidateDraftThread.chatFolderTarget }
+          : {}),
         threadId,
         environmentId: normalizedEnvironmentId,
         projectId: projectId as ProjectId,
@@ -2469,6 +2485,9 @@ function toHydratedDraftThreadState(
   persistedDraftThread: PersistedDraftThreadState,
 ): DraftThreadState {
   return {
+    ...(persistedDraftThread.chatFolderTarget
+      ? { chatFolderTarget: persistedDraftThread.chatFolderTarget }
+      : {}),
     threadId: persistedDraftThread.threadId,
     environmentId: persistedDraftThread.environmentId as EnvironmentId,
     projectId: persistedDraftThread.projectId,
@@ -2768,6 +2787,10 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                 ? "manual"
                 : existing.environmentSelection);
             const nextDraftThread: DraftThreadState = {
+              chatFolderTarget:
+                options.chatFolderTarget === undefined
+                  ? (existing.chatFolderTarget ?? null)
+                  : options.chatFolderTarget,
               threadId: existing.threadId,
               environmentId: nextProjectRef.environmentId,
               projectId: nextProjectRef.projectId,
@@ -2793,6 +2816,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               promotedTo: existing.promotedTo ?? null,
             };
             const isUnchanged =
+              nextDraftThread.chatFolderTarget === existing.chatFolderTarget &&
               nextDraftThread.environmentId === existing.environmentId &&
               nextDraftThread.projectId === existing.projectId &&
               nextDraftThread.logicalProjectKey === existing.logicalProjectKey &&

@@ -1,3 +1,5 @@
+import { openMoveChats, revealChatFolder, supportsChatFolders } from "../components/explorer/state";
+import { persistClientSettingsPatch } from "./useSettings";
 import { openBranchNaming } from "../components/BranchNamingDialog";
 import { requestCustomSnooze } from "../components/CustomSnoozeDialog";
 import { scopeProjectRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
@@ -132,6 +134,7 @@ export function useThreadActionMenu(input: {
         if (!thread) return;
         const now = new Date();
         const supports = {
+          chatOrganization: supportsChatFolders(threadRef.environmentId),
           settlement: readEnvironmentSupportsSettlement(threadRef.environmentId),
           snooze: readEnvironmentSupportsSnooze(threadRef.environmentId),
           pinning: readEnvironmentSupportsPinning(threadRef.environmentId),
@@ -245,6 +248,13 @@ export function useThreadActionMenu(input: {
           }
           case "rename":
             onStartRename();
+            return;
+          case "move-to-folder":
+            openMoveChats([threadRef]);
+            return;
+          case "reveal-folder":
+            await persistClientSettingsPatch({ sidebarLayout: "explorer" });
+            revealChatFolder(threadRef, true);
             return;
           case "branch-naming":
             openBranchNaming(threadRef);

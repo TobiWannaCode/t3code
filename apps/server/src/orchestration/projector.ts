@@ -1,3 +1,4 @@
+import { EMPTY_CHAT_ORGANIZATION, applyOrganizationChange } from "@t3tools/shared/chatOrganization";
 import type {
   OrchestrationEvent,
   OrchestrationProject,
@@ -332,6 +333,18 @@ export function projectEvent(
   };
 
   switch (event.type) {
+    case "chatFolder.created":
+    case "chatFolder.renamed":
+    case "chatFolder.moved":
+    case "chatFolder.removed":
+    case "chatOrganization.threadsAssigned":
+      return Effect.succeed({
+        ...nextBase,
+        chatOrganization: applyOrganizationChange(
+          model.chatOrganization ?? EMPTY_CHAT_ORGANIZATION,
+          event.payload,
+        ),
+      });
     case "thread.branch-naming-recovery-requested":
       return Effect.succeed(nextBase);
     case "thread.branch-naming-updated":

@@ -1,3 +1,4 @@
+import { makeChatOrganizationProjection } from "../../persistence/ChatOrganizationProjection.ts";
 import { BranchNamingOperation } from "@t3tools/contracts";
 import {
   AgentSessionImportSource,
@@ -271,6 +272,7 @@ const ProjectionFullThreadDiffContextRowSchema = Schema.Struct({
 });
 
 const REQUIRED_SNAPSHOT_PROJECTORS = [
+  ORCHESTRATION_PROJECTOR_NAMES.chatOrganization,
   ORCHESTRATION_PROJECTOR_NAMES.projects,
   ORCHESTRATION_PROJECTOR_NAMES.threads,
   ORCHESTRATION_PROJECTOR_NAMES.threadMessages,
@@ -491,6 +493,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
   const threadBackgroundLiveness = yield* ThreadBackgroundLivenessService;
   const threadPlanProgress = yield* ThreadPlanProgressService;
   const sql = yield* SqlClient.SqlClient;
+  const chatOrganization = yield* makeChatOrganizationProjection;
   const repositoryIdentityResolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
   const repositoryIdentityResolutionConcurrency = 4;
   const resolveRepositoryIdentitiesForProjects = Effect.fn(
@@ -2325,6 +2328,7 @@ pending_approval_requests AS (
               }));
 
               const snapshot = {
+                chatOrganization: yield* chatOrganization.read(),
                 snapshotSequence: computeSnapshotSequence(stateRows),
                 projects,
                 threads,
@@ -2572,6 +2576,7 @@ pending_approval_requests AS (
               }
 
               return {
+                chatOrganization: yield* chatOrganization.read(),
                 snapshotSequence: computeSnapshotSequence(stateRows),
                 projects,
                 threads,
@@ -2679,6 +2684,7 @@ pending_approval_requests AS (
               const pullRequestsByThread = groupPullRequestRowsByThread(pullRequestRows);
 
               const snapshot = {
+                chatOrganization: yield* chatOrganization.read(),
                 snapshotSequence: computeSnapshotSequence(stateRows),
                 projects: Arr.filterMap(projectRows, (row) =>
                   row.deletedAt === null
@@ -2845,6 +2851,7 @@ pending_approval_requests AS (
               );
 
               const snapshot = {
+                chatOrganization: yield* chatOrganization.read(),
                 snapshotSequence: computeSnapshotSequence(stateRows),
                 projects: Arr.filterMap(projectRows, (row) =>
                   row.deletedAt === null && activeProjectIds.has(row.projectId)
@@ -3745,6 +3752,7 @@ pending_approval_requests AS (
       );
 
   return {
+    getChatOrganization: chatOrganization.read,
     getCommandReadModel,
     getUserInputActivity,
     listActivitiesByKind,

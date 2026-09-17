@@ -453,6 +453,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["composer meter usage tokens circle old"],
   },
   {
+    id: "sidebar-layout",
+    title: "Conversation sidebar layout",
+    to: "/settings/appearance",
+    searchTerms: ["explorer folders chats organization existing vscode"],
+  },
+  {
     id: "legacy-sidebar",
     title: "Sidebar (legacy)",
     to: "/settings/general",

@@ -373,6 +373,12 @@ export function useEnvironmentIdentificationMode(): EnvironmentIdentificationMod
  * sidebar and then swap it out once persisted settings land — remounting the
  * whole tree for everyone instead of only for legacy opt-ins.
  */
+export function useSidebarLayout(): "existing" | "explorer" {
+  const hydrated = useClientSettingsHydrated();
+  const layout = useClientSettingsValue().sidebarLayout;
+  return hydrated ? layout : "existing";
+}
+
 export function useLegacySidebarEnabled(): boolean {
   const settingsHydrated = useClientSettingsHydrated();
   const legacySidebarEnabled = useClientSettingsValue().legacySidebarEnabled;

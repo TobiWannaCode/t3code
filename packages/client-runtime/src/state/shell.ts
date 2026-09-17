@@ -201,6 +201,10 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
           Effect.map((config) => config.shellResumeCompletionMarker === true),
           Effect.orElseSucceed(() => false),
         );
+        const includeChatOrganization = yield* session.initialConfig.pipe(
+          Effect.map((config) => config.environment.capabilities.chatOrganization === true),
+          Effect.orElseSucceed(() => false),
+        );
         yield* Ref.set(awaitingCompletion, supportsCompletionMarker);
         yield* setSynchronizing;
 
@@ -235,8 +239,15 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
 
         // If the authoritative refresh failed, omit the cached cursor so the
         // socket fallback sends a complete snapshot for this new session.
-        if (!canResume || Option.isNone(current.snapshot)) {
-          return supportsCompletionMarker ? { requestCompletionMarker: true as const } : {};
+        if (
+          !canResume ||
+          Option.isNone(current.snapshot) ||
+          (includeChatOrganization && current.snapshot.value.chatOrganization === undefined)
+        ) {
+          return {
+            ...(includeChatOrganization ? { includeChatOrganization: true } : {}),
+            ...(supportsCompletionMarker ? { requestCompletionMarker: true as const } : {}),
+          };
         }
         if (!supportsCompletionMarker) {
           // Without a completion marker there is no synchronized signal for a
@@ -249,6 +260,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
         }
         return {
           afterSequence: current.snapshot.value.snapshotSequence,
+          ...(includeChatOrganization ? { includeChatOrganization: true } : {}),
           ...(supportsCompletionMarker ? { requestCompletionMarker: true as const } : {}),
         };
       }),

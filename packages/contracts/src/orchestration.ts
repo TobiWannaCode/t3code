@@ -1,3 +1,9 @@
+import {
+  ChatOrganization,
+  ChatOrganizationChange,
+  ChatOrganizationCommand,
+} from "./chatOrganization.ts";
+import { ChatFolderId, ChatOrganizationId } from "./baseSchemas.ts";
 import { BranchNamingOperation } from "./branchNaming.ts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -834,6 +840,7 @@ export const OrchestrationThread = Schema.Struct({
 export type OrchestrationThread = typeof OrchestrationThread.Type;
 
 export const OrchestrationReadModel = Schema.Struct({
+  chatOrganization: Schema.optional(ChatOrganization),
   snapshotSequence: NonNegativeInt,
   projects: Schema.Array(OrchestrationProject),
   threads: Schema.Array(OrchestrationThread),
@@ -921,6 +928,7 @@ export const OrchestrationThreadShell = Schema.Struct({
 export type OrchestrationThreadShell = typeof OrchestrationThreadShell.Type;
 
 export const OrchestrationShellSnapshot = Schema.Struct({
+  chatOrganization: Schema.optional(ChatOrganization),
   snapshotSequence: NonNegativeInt,
   projects: Schema.Array(OrchestrationProjectShell),
   threads: Schema.Array(OrchestrationThreadShell),
@@ -929,6 +937,11 @@ export const OrchestrationShellSnapshot = Schema.Struct({
 export type OrchestrationShellSnapshot = typeof OrchestrationShellSnapshot.Type;
 
 export const OrchestrationShellStreamEvent = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("chat-organization-replaced"),
+    sequence: NonNegativeInt,
+    organization: ChatOrganization,
+  }),
   Schema.Struct({
     kind: Schema.Literal("project-upserted"),
     sequence: NonNegativeInt,
@@ -965,6 +978,7 @@ export const OrchestrationShellStreamItem = Schema.Union([
 export type OrchestrationShellStreamItem = typeof OrchestrationShellStreamItem.Type;
 
 export const OrchestrationSubscribeShellInput = Schema.Struct({
+  includeChatOrganization: Schema.optionalKey(Schema.Boolean),
   /**
    * When provided, the server skips the initial full shell snapshot and instead
    * replays shell events after this sequence before streaming live events.
@@ -1094,6 +1108,7 @@ const ProjectDeleteCommand = Schema.Struct({
 });
 
 const ThreadCreateCommand = Schema.Struct({
+  chatFolderId: Schema.optional(ChatFolderId),
   type: Schema.Literal("thread.create"),
   commandId: CommandId,
   threadId: ThreadId,
@@ -1288,6 +1303,7 @@ const ThreadInteractionModeSetCommand = Schema.Struct({
 });
 
 const ThreadTurnStartBootstrapCreateThread = Schema.Struct({
+  chatFolderId: Schema.optional(ChatFolderId),
   projectId: ProjectId,
   title: TrimmedNonEmptyString,
   modelSelection: ModelSelection,
@@ -1428,6 +1444,7 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ProjectCreateCommand,
   ProjectMetaUpdateCommand,
   ProjectDeleteCommand,
+  ChatOrganizationCommand,
   ThreadCreateCommand,
   ThreadDeleteCommand,
   ThreadArchiveCommand,
@@ -1464,6 +1481,7 @@ export const ClientOrchestrationCommand = Schema.Union([
   ProjectCreateCommand,
   ProjectMetaUpdateCommand,
   ProjectDeleteCommand,
+  ChatOrganizationCommand,
   ThreadCreateCommand,
   ThreadDeleteCommand,
   ThreadArchiveCommand,
@@ -1690,6 +1708,11 @@ export const OrchestrationCommand = Schema.Union([
 export type OrchestrationCommand = typeof OrchestrationCommand.Type;
 
 export const OrchestrationEventType = Schema.Literals([
+  "chatFolder.created",
+  "chatFolder.renamed",
+  "chatFolder.moved",
+  "chatFolder.removed",
+  "chatOrganization.threadsAssigned",
   "thread.branch-naming-updated",
   "thread.branch-naming-recovery-requested",
   "project.created",
@@ -1727,7 +1750,11 @@ export const OrchestrationEventType = Schema.Literals([
 ]);
 export type OrchestrationEventType = typeof OrchestrationEventType.Type;
 
-export const OrchestrationAggregateKind = Schema.Literals(["project", "thread"]);
+export const OrchestrationAggregateKind = Schema.Literals([
+  "project",
+  "thread",
+  "chat-organization",
+]);
 export type OrchestrationAggregateKind = typeof OrchestrationAggregateKind.Type;
 export const OrchestrationActorKind = Schema.Literals(["client", "server", "provider"]);
 
@@ -2039,7 +2066,7 @@ const EventBaseFields = {
   sequence: NonNegativeInt,
   eventId: EventId,
   aggregateKind: OrchestrationAggregateKind,
-  aggregateId: Schema.Union([ProjectId, ThreadId]),
+  aggregateId: Schema.Union([ProjectId, ThreadId, ChatOrganizationId]),
   occurredAt: IsoDateTime,
   commandId: Schema.NullOr(CommandId),
   causationEventId: Schema.NullOr(EventId),
@@ -2048,6 +2075,17 @@ const EventBaseFields = {
 } as const;
 
 export const OrchestrationEvent = Schema.Union([
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literals([
+      "chatFolder.created",
+      "chatFolder.renamed",
+      "chatFolder.moved",
+      "chatFolder.removed",
+      "chatOrganization.threadsAssigned",
+    ]),
+    payload: ChatOrganizationChange,
+  }),
   Schema.Struct({
     ...EventBaseFields,
     type: Schema.Literal("thread.branch-naming-updated"),

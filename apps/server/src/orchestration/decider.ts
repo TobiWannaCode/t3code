@@ -1,3 +1,4 @@
+import { decideChatOrganization } from "./chatOrganizationDecider.ts";
 import { decideBranchNaming, namingNeedsRecovery } from "./branchNamingDecider.ts";
 import {
   EventId,
@@ -264,6 +265,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       commandType: command.type,
       detail: "Reconcile the pending branch rename before changing its project workspace.",
     });
+  if ("organizationId" in command) return yield* decideChatOrganization(command, readModel);
   switch (command.type) {
     case "thread.branch.regenerate":
     case "thread.branch-naming.set":
@@ -434,7 +436,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
-      return {
+      const event = {
         ...(yield* withEventBase({
           aggregateKind: "thread",
           aggregateId: command.threadId,
@@ -455,7 +457,8 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },
-      };
+      } satisfies PlannedOrchestrationEvent;
+      return [event, ...(yield* decideChatOrganization(command, readModel))];
     }
 
     case "thread.delete": {
@@ -465,7 +468,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         threadId: command.threadId,
       });
       const occurredAt = yield* nowIso;
-      return {
+      const event = {
         ...(yield* withEventBase({
           aggregateKind: "thread",
           aggregateId: command.threadId,
@@ -477,7 +480,8 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           threadId: command.threadId,
           deletedAt: occurredAt,
         },
-      };
+      } satisfies PlannedOrchestrationEvent;
+      return [event, ...(yield* decideChatOrganization(command, readModel))];
     }
 
     case "thread.archive": {

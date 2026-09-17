@@ -843,7 +843,32 @@ const makeWsRpcLayer = (
 
       const toShellStreamEvent = (
         event: ShellEvent,
-      ): Effect.Effect<Option.Option<OrchestrationShellStreamEvent>, never, never> => {
+        includeChatOrganization = false,
+      ): Effect.Effect<
+        Option.Option<OrchestrationShellStreamEvent>,
+        OrchestrationGetSnapshotError,
+        never
+      > => {
+        if (event.aggregateKind === "chat-organization") {
+          if (!includeChatOrganization) return Effect.succeed(Option.none());
+          return projectionSnapshotQuery.getChatOrganization().pipe(
+            Effect.retry({ times: 1 }),
+            Effect.map((organization) =>
+              Option.some({
+                kind: "chat-organization-replaced" as const,
+                sequence: event.sequence,
+                organization,
+              }),
+            ),
+            Effect.mapError(
+              (cause) =>
+                new OrchestrationGetSnapshotError({
+                  message: "Could not synchronize chat folders",
+                  cause,
+                }),
+            ),
+          );
+        }
         switch (event.type) {
           case "project.created":
           case "project.meta-updated":
@@ -981,7 +1006,12 @@ const makeWsRpcLayer = (
       const SHELL_REFETCH_CONCURRENCY = 8;
       const coalesceShellEvents = (
         events: ReadonlyArray<ShellEvent>,
-      ): Effect.Effect<ReadonlyArray<OrchestrationShellStreamEvent>, never, never> =>
+        includeChatOrganization = false,
+      ): Effect.Effect<
+        ReadonlyArray<OrchestrationShellStreamEvent>,
+        OrchestrationGetSnapshotError,
+        never
+      > =>
         Effect.gen(function* () {
           if (events.length === 0) {
             return [];
@@ -993,9 +1023,13 @@ const makeWsRpcLayer = (
           const survivors = Array.from(latestByAggregate.values()).sort(
             (left, right) => left.sequence - right.sequence,
           );
-          const shellEvents = yield* Effect.forEach(survivors, toShellStreamEvent, {
-            concurrency: SHELL_REFETCH_CONCURRENCY,
-          });
+          const shellEvents = yield* Effect.forEach(
+            survivors,
+            (event) => toShellStreamEvent(event, includeChatOrganization),
+            {
+              concurrency: SHELL_REFETCH_CONCURRENCY,
+            },
+          );
           return shellEvents.flatMap((option) => (Option.isSome(option) ? [option.value] : []));
         });
 
@@ -1007,11 +1041,12 @@ const makeWsRpcLayer = (
       const SHELL_COALESCE_MAX_CHUNK = 512;
       const coalesceShellStream = <E, R>(
         stream: Stream.Stream<OrchestrationEvent, E, R>,
-      ): Stream.Stream<OrchestrationShellStreamEvent, E, R> =>
+        includeChatOrganization = false,
+      ): Stream.Stream<OrchestrationShellStreamEvent, E | OrchestrationGetSnapshotError, R> =>
         stream.pipe(
           Stream.map(toShellEvent),
           Stream.groupedWithin(SHELL_COALESCE_MAX_CHUNK, SHELL_COALESCE_WINDOW),
-          Stream.mapEffect(coalesceShellEvents),
+          Stream.mapEffect((events) => coalesceShellEvents(events, includeChatOrganization)),
           Stream.flatMap((items) => Stream.fromIterable(items)),
         );
 
@@ -1024,7 +1059,12 @@ const makeWsRpcLayer = (
       // batch at markers and coalesce only the event segments on either side.
       const coalesceShellLiveInputs = (
         inputs: ReadonlyArray<ShellLiveInput>,
-      ): Effect.Effect<ReadonlyArray<OrchestrationShellStreamItem>, never, never> =>
+        includeChatOrganization = false,
+      ): Effect.Effect<
+        ReadonlyArray<OrchestrationShellStreamItem>,
+        OrchestrationGetSnapshotError,
+        never
+      > =>
         Effect.gen(function* () {
           const output: Array<OrchestrationShellStreamItem> = [];
           let pendingEvents: Array<ShellEvent> = [];
@@ -1035,12 +1075,12 @@ const makeWsRpcLayer = (
               continue;
             }
 
-            output.push(...(yield* coalesceShellEvents(pendingEvents)));
+            output.push(...(yield* coalesceShellEvents(pendingEvents, includeChatOrganization)));
             pendingEvents = [];
             output.push({ kind: "synchronized" });
           }
 
-          output.push(...(yield* coalesceShellEvents(pendingEvents)));
+          output.push(...(yield* coalesceShellEvents(pendingEvents, includeChatOrganization)));
           return output;
         });
 
@@ -1389,6 +1429,9 @@ const makeWsRpcLayer = (
                 commandId: yield* serverCommandId("bootstrap-thread-create"),
                 threadId: command.threadId,
                 projectId: bootstrap.createThread.projectId,
+                ...(bootstrap.createThread.chatFolderId
+                  ? { chatFolderId: bootstrap.createThread.chatFolderId }
+                  : {}),
                 title: bootstrap.createThread.title,
                 modelSelection: bootstrap.createThread.modelSelection,
                 runtimeMode: bootstrap.createThread.runtimeMode,
@@ -2012,9 +2055,10 @@ const makeWsRpcLayer = (
               const coalesceRetainedInputs = (
                 items: ReadonlyArray<RetainedLiveItem<ShellLiveInput>>,
               ) =>
-                coalesceShellLiveInputs(items.map((item) => item.value)).pipe(
-                  Effect.flatMap((output) => liveBudget.replace(items, output)),
-                );
+                coalesceShellLiveInputs(
+                  items.map((item) => item.value),
+                  input.includeChatOrganization === true,
+                ).pipe(Effect.flatMap((output) => liveBudget.replace(items, output)));
               const bufferedLiveStream = Stream.fromQueue(liveBuffer).pipe(
                 Stream.groupedWithin(SHELL_COALESCE_MAX_CHUNK, SHELL_COALESCE_WINDOW),
                 Stream.mapEffect(coalesceRetainedInputs),
@@ -2088,6 +2132,7 @@ const makeWsRpcLayer = (
                   // cannot chase a moving event-store head or grow the live
                   // buffer indefinitely while waiting for an empty page.
                   orchestrationEngine.readEvents(afterSequence, replayGap),
+                  input.includeChatOrganization === true,
                 ).pipe(
                   Stream.mapError(
                     (cause) =>

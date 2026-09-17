@@ -73,6 +73,32 @@ If dragging is unavailable for one environment, update the T3 Code server runnin
 environment. Pinned and active reordering require server support. Threads from older servers keep
 their default order until the server is updated.
 
+## Organize chats in folders
+
+On web and desktop, choose **Settings → Appearance → Conversation sidebar → Explorer**.
+Create folders under an environment, then use **Move to folder** from a chat's menu
+or drag chats into a folder. Drop between chat rows to choose their order within
+that folder or Unfiled. The insertion line and nearby label show the destination.
+Multi-selection moves chats together, without changing pin or lifecycle status. Folders can
+combine projects and providers within one environment; they do not move workspaces
+or change branches. Unassigned chats remain in **Unfiled**.
+
+Use a folder's menu to rename it, create subfolders, reorder it, or start a chat
+with an explicit project and workspace choice. Removing a folder moves its chats
+and immediate subfolders to its parent; removing a root folder returns its chats
+to Unfiled. Conversations are retained.
+
+**Chats** shows active and pinned work. **Activity** retains the usual project and
+lifecycle controls, and **Settled** shows finished work. Snoozed, settled, and
+archived chats keep their folder membership. **Reveal folder** opens their folder
+without waking or reopening them. Use **View settled here** on a folder to narrow
+Settled to that subtree.
+
+Folder changes require a connected environment running a version with folder
+support. Your selected sidebar layout and expanded folders stay local to this
+client; folder names, order, and membership sync through their environment.
+Choose **Existing** to return to your previous sidebar layout at any time.
+
 ## Settle finished work
 
 Choose **Settle thread** from its menu to move finished work out of the active list

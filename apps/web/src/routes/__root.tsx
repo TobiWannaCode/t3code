@@ -1,3 +1,4 @@
+import { FolderDialogHost } from "../components/explorer/FolderDialog";
 import { BranchNamingDraftSync } from "../components/BranchNamingDraftSync";
 import { BranchNamingDialogHost } from "../components/BranchNamingDialog";
 import { type ServerLifecycleWelcomePayload } from "@t3tools/contracts";
@@ -175,6 +176,7 @@ function RootRouteView() {
           <GlassAppearanceSync />
           <FontAppearanceSync />
           <CustomSnoozeDialogHost />
+          <FolderDialogHost />
           <BranchNamingDialogHost />
           <BranchNamingDraftSync />
           <CommandPalette>
@@ -229,6 +231,7 @@ function RootRouteView() {
           <ThreadNotificationCoordinator />
           <ConfirmDialogHost />
           <CustomSnoozeDialogHost />
+          <FolderDialogHost />
           <BranchNamingDialogHost />
           <BranchNamingDraftSync />
           <SlowRpcRequestToastCoordinator />

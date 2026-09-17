@@ -16,6 +16,16 @@ export function applyShellStreamEvent(
   if (event.sequence <= snapshot.snapshotSequence) return snapshot;
 
   switch (event.kind) {
+    case "chat-organization-replaced":
+      return {
+        ...snapshot,
+        snapshotSequence: event.sequence,
+        chatOrganization:
+          !snapshot.chatOrganization ||
+          event.organization.revision >= snapshot.chatOrganization.revision
+            ? event.organization
+            : snapshot.chatOrganization,
+      };
     case "project-upserted": {
       const projects = snapshot.projects.some((p) => p.id === event.project.id)
         ? Arr.map(snapshot.projects, (p) => (p.id === event.project.id ? event.project : p))

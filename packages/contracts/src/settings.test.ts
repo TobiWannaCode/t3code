@@ -909,3 +909,13 @@ it("validates remote device hosts and rejects ambiguous host ids", () => {
   ).toThrow();
   expect(() => decodeDeviceHostSettings({ deviceHosts: [{ ...host, port: 0 }] })).toThrow();
 });
+
+describe("conversation explorer preference", () => {
+  it("keeps existing layouts by default and round-trips the explorer without clearing the legacy preference", () => {
+    expect(decodeClientSettings({}).sidebarLayout).toBe("existing");
+    const input = { sidebarLayout: "explorer", legacySidebarEnabled: true };
+    expect(decodeClientSettingsPatch(input)).toEqual(input);
+    expect(encodeClientSettings(decodeClientSettings(input))).toMatchObject(input);
+    expect(() => decodeClientSettings({ sidebarLayout: "unknown" })).toThrow();
+  });
+});

@@ -1,3 +1,4 @@
+import { ChatOrganizationId } from "@t3tools/contracts";
 import type {
   OrchestrationClientOrigin,
   OrchestrationEvent,
@@ -62,9 +63,11 @@ interface CommandEnvelope {
 }
 
 function commandToAggregateRef(command: OrchestrationCommand): {
-  readonly aggregateKind: "project" | "thread";
-  readonly aggregateId: ProjectId | ThreadId;
+  readonly aggregateKind: "project" | "thread" | "chat-organization";
+  readonly aggregateId: ProjectId | ThreadId | ChatOrganizationId;
 } {
+  if ("organizationId" in command)
+    return { aggregateKind: "chat-organization", aggregateId: command.organizationId };
   switch (command.type) {
     case "project.create":
     case "project.meta.update":
@@ -295,8 +298,8 @@ const makeOrchestrationEngine = Effect.gen(function* () {
 
               yield* commandReceiptRepository.upsert({
                 commandId: envelope.command.commandId,
-                aggregateKind: lastSavedEvent.aggregateKind,
-                aggregateId: lastSavedEvent.aggregateId,
+                aggregateKind: aggregateRef.aggregateKind,
+                aggregateId: aggregateRef.aggregateId,
                 acceptedAt: lastSavedEvent.occurredAt,
                 resultSequence: lastSavedEvent.sequence,
                 status: "accepted",

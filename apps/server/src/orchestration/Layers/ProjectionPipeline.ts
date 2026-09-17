@@ -1,3 +1,4 @@
+import { makeChatOrganizationProjection } from "../../persistence/ChatOrganizationProjection.ts";
 import {
   ApprovalRequestId,
   isImportedAgentSessionMessageId,
@@ -65,6 +66,7 @@ import {
 } from "../../attachmentStore.ts";
 
 export const ORCHESTRATION_PROJECTOR_NAMES = {
+  chatOrganization: "projection.chat-organization",
   projects: "projection.projects",
   threads: "projection.threads",
   threadMessages: "projection.thread-messages",
@@ -482,6 +484,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     const eventStore = yield* OrchestrationEventStore;
     const projectionStateRepository = yield* ProjectionStateRepository;
     const projectionProjectRepository = yield* ProjectionProjectRepository;
+    const chatOrganization = yield* makeChatOrganizationProjection;
     const projectionThreadRepository = yield* ProjectionThreadRepository;
     const projectionThreadMessageRepository = yield* ProjectionThreadMessageRepository;
     const projectionThreadProposedPlanRepository = yield* ProjectionThreadProposedPlanRepository;
@@ -1946,6 +1949,21 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     });
 
     const projectors: ReadonlyArray<ProjectorDefinition> = [
+      {
+        name: ORCHESTRATION_PROJECTOR_NAMES.chatOrganization,
+        apply: (event) => {
+          switch (event.type) {
+            case "chatFolder.created":
+            case "chatFolder.renamed":
+            case "chatFolder.moved":
+            case "chatFolder.removed":
+            case "chatOrganization.threadsAssigned":
+              return chatOrganization.apply(event.payload);
+            default:
+              return Effect.void;
+          }
+        },
+      },
       {
         name: ORCHESTRATION_PROJECTOR_NAMES.projects,
         apply: applyProjectsProjection,

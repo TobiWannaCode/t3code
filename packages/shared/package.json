@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./chatOrganization": {
+      "types": "./src/chatOrganization.ts",
+      "import": "./src/chatOrganization.ts"
+    },
     "./legacyCliLauncher": {
       "types": "./src/legacyCliLauncher.ts",
       "import": "./src/legacyCliLauncher.ts"

@@ -1,3 +1,5 @@
+import { GitMutationCoordinator } from "./git/GitMutationCoordinator.ts";
+import { ChatFolderId } from "@t3tools/contracts";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -720,7 +722,18 @@ const buildAppUnderTest = (options?: {
       ),
       NativeAppIconResolver.layer,
     );
-    const gitWorkflowLayer = GitWorkflowService.layer.pipe(
+    const gitWorkflowLayer = Layer.effect(
+      GitWorkflowService.GitWorkflowService,
+      GitWorkflowService.make,
+    ).pipe(
+      // Router fixtures use virtual repositories; locking is covered by Git integration tests.
+      Layer.provide(
+        Layer.succeed(GitMutationCoordinator, {
+          withRepository: (_cwd, effect) => effect,
+          block: () => {},
+          unblock: () => {},
+        }),
+      ),
       Layer.provideMerge(vcsDriverRegistryLayer),
       Layer.provideMerge(gitVcsDriverLayer),
       Layer.provideMerge(gitManagerLayer),
@@ -10933,6 +10946,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               interactionMode: "default",
               bootstrap: {
                 createThread: {
+                  chatFolderId: ChatFolderId.make("bootstrap-folder"),
                   projectId: defaultProjectId,
                   title: "Bootstrap Thread",
                   modelSelection: defaultModelSelection,
@@ -10972,6 +10986,10 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         );
         // The checkout can take minutes, so the thread reads as working from
         // the moment setup starts rather than only once the turn is dispatched.
+        const createdThreadCommand = dispatchedCommands.find(
+          (command) => command.type === "thread.create",
+        );
+        assert.equal(createdThreadCommand?.chatFolderId, ChatFolderId.make("bootstrap-folder"));
         const preparingCommand = dispatchedCommands[3];
         assertTrue(preparingCommand?.type === "thread.session.set");
         if (preparingCommand?.type === "thread.session.set") {
@@ -12546,4 +12564,129 @@ it.live(
       assert.deepEqual(transferBudgetViolations(runs), []);
     }).pipe(Effect.provide(NodeServices.layer)),
   120_000,
+);
+
+it.effect("chat folders are opt-in and coalesced as complete shell replacements", () =>
+  Effect.gen(function* () {
+    const { CHAT_ORGANIZATION_ID } = yield* Effect.promise(
+      () => import("@t3tools/shared/chatOrganization"),
+    );
+    let reads = 0;
+    const events = [1, 2].map((sequence) => ({
+      sequence,
+      eventId: EventId.make(`folder-${sequence}`),
+      aggregateKind: "chat-organization" as const,
+      aggregateId: CHAT_ORGANIZATION_ID,
+      occurredAt: "2026-09-16T00:00:00Z",
+      commandId: null,
+      causationEventId: null,
+      correlationId: null,
+      metadata: {},
+      type: "chatFolder.created" as const,
+      payload: {
+        revision: sequence,
+        folders: [],
+        removedFolderIds: [],
+        memberships: [],
+        unassignedThreadIds: [],
+      },
+    }));
+    const organization = { revision: 2, folders: [], memberships: [] };
+    yield* buildAppUnderTest({
+      layers: {
+        orchestrationEngine: {
+          latestSequence: Effect.succeed(2),
+          readEvents: () => Stream.fromIterable(events),
+        },
+        projectionSnapshotQuery: {
+          getChatOrganization: () =>
+            Effect.sync(() => {
+              reads++;
+              return organization;
+            }),
+        },
+      },
+    });
+    const wsUrl = yield* getWsServerUrl("/ws");
+    const legacy = yield* Effect.scoped(
+      withWsRpcClient(wsUrl, (client) =>
+        client[ORCHESTRATION_WS_METHODS.subscribeShell]({
+          afterSequence: 0,
+          requestCompletionMarker: true,
+        }).pipe(Stream.take(1), Stream.runCollect),
+      ),
+    );
+    assert.deepEqual(Array.from(legacy), [{ kind: "synchronized" }]);
+    assert.equal(reads, 0);
+    const modern = yield* Effect.scoped(
+      withWsRpcClient(wsUrl, (client) =>
+        client[ORCHESTRATION_WS_METHODS.subscribeShell]({
+          afterSequence: 0,
+          includeChatOrganization: true,
+          requestCompletionMarker: true,
+        }).pipe(Stream.take(2), Stream.runCollect),
+      ),
+    );
+    assert.deepEqual(Array.from(modern), [
+      { kind: "chat-organization-replaced", sequence: 2, organization },
+      { kind: "synchronized" },
+    ]);
+    assert.equal(reads, 1);
+  }).pipe(Effect.provide([NodeHttpServer.layerTest, NodeServices.layer])),
+);
+
+it.effect("chat folder refetch failure fails the shell stream instead of skipping an update", () =>
+  Effect.gen(function* () {
+    const { CHAT_ORGANIZATION_ID } = yield* Effect.promise(
+      () => import("@t3tools/shared/chatOrganization"),
+    );
+    const { PersistenceSqlError } = yield* Effect.promise(() => import("./persistence/Errors.ts"));
+    let reads = 0;
+    const event: OrchestrationEvent = {
+      sequence: 1,
+      eventId: EventId.make("folder-failed"),
+      aggregateKind: "chat-organization",
+      aggregateId: CHAT_ORGANIZATION_ID,
+      occurredAt: "2026-09-16T00:00:00Z",
+      commandId: null,
+      causationEventId: null,
+      correlationId: null,
+      metadata: {},
+      type: "chatFolder.created",
+      payload: {
+        revision: 1,
+        folders: [],
+        removedFolderIds: [],
+        memberships: [],
+        unassignedThreadIds: [],
+      },
+    };
+    yield* buildAppUnderTest({
+      layers: {
+        orchestrationEngine: {
+          latestSequence: Effect.succeed(1),
+          readEvents: () => Stream.make(event),
+        },
+        projectionSnapshotQuery: {
+          getChatOrganization: () =>
+            Effect.suspend(() => {
+              reads++;
+              return Effect.fail(new PersistenceSqlError({ operation: "folder-read-test" }));
+            }),
+        },
+      },
+    });
+    const wsUrl = yield* getWsServerUrl("/ws");
+    const result = yield* Effect.scoped(
+      withWsRpcClient(wsUrl, (client) =>
+        client[ORCHESTRATION_WS_METHODS.subscribeShell]({
+          afterSequence: 0,
+          includeChatOrganization: true,
+          requestCompletionMarker: true,
+        }).pipe(Stream.take(1), Stream.runCollect),
+      ),
+    ).pipe(Effect.result);
+    assert.equal(result._tag, "Failure");
+    assert.equal(reads, 2);
+  }).pipe(Effect.provide([NodeHttpServer.layerTest, NodeServices.layer])),
 );

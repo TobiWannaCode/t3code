@@ -1,3 +1,4 @@
+export * from "./chatOrganization.ts";
 export * from "./branchNaming.ts";
 
 export * from "./baseSchemas.ts";

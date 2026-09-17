@@ -3403,3 +3403,34 @@ describe("composerDraftStore attachment references", () => {
     );
   });
 });
+
+it("retains a scoped folder target through branch sync and environment changes until explicitly cleared", async () => {
+  const { ChatFolderId } = await import("@t3tools/contracts");
+  const first = scopeProjectRef(EnvironmentId.make("folder-env"), ProjectId.make("folder-project"));
+  const draftId = DraftId.make("folder-draft");
+  const target = { environmentId: first.environmentId, folderId: ChatFolderId.make("folder") };
+  const store = useComposerDraftStore.getState();
+  store.setProjectDraftThreadId(first, draftId);
+  store.setPrompt(draftId, "Unsent work");
+  store.setDraftThreadContext(draftId, { chatFolderTarget: target });
+  store.setDraftThreadContext(draftId, { branch: "feature/renamed" });
+  expect(useComposerDraftStore.getState().getDraftSession(draftId)?.chatFolderTarget).toEqual(
+    target,
+  );
+  const persisted = partializeComposerDraftStoreState(useComposerDraftStore.getState());
+  expect(persisted.draftThreadsByThreadKey[draftId]?.chatFolderTarget).toEqual(target);
+  const hydrated = useComposerDraftStore.persist.getOptions().merge!(
+    persisted,
+    useComposerDraftStore.getInitialState(),
+  );
+  expect(hydrated.draftThreadsByThreadKey[draftId]?.chatFolderTarget).toEqual(target);
+  store.setDraftThreadContext(draftId, {
+    projectRef: scopeProjectRef(EnvironmentId.make("other-env"), first.projectId),
+  });
+  expect(useComposerDraftStore.getState().getDraftSession(draftId)?.chatFolderTarget).toEqual(
+    target,
+  );
+  store.setDraftThreadContext(draftId, { chatFolderTarget: null });
+  expect(useComposerDraftStore.getState().getDraftSession(draftId)?.chatFolderTarget).toBeNull();
+  expect(useComposerDraftStore.getState().getComposerDraft(draftId)?.prompt).toBe("Unsent work");
+});

@@ -106,6 +106,7 @@ async function createOrchestrationSystem(
   const snapshotQuery = await runtime.runPromise(Effect.service(ProjectionSnapshotQuery));
   return {
     engine,
+    snapshotQuery,
     readModel: () => runtime.runPromise(snapshotQuery.getSnapshot()),
     readThread: (threadId: ThreadId) =>
       runtime.runPromise(snapshotQuery.getThreadDetailById(threadId)),
@@ -421,6 +422,7 @@ describe("OrchestrationEngine", () => {
         Layer.succeed(ProjectionSnapshotQuery, {
           getUserInputActivity: () => Effect.die("unused"),
           listActivitiesByKind: () => Effect.die("unused"),
+          getChatOrganization: () => Effect.die("Unexpected folder query in this test"),
           getCommandReadModel: () => Effect.succeed(commandReadModel),
           getSnapshot: () =>
             Effect.sync(() => {
@@ -2124,5 +2126,151 @@ describe("OrchestrationEngine", () => {
     expect(withoutOrigin?.metadata.origin).toBeUndefined();
 
     await system.dispose();
+  });
+});
+
+describe("chat organization transactions", () => {
+  it("persists create-and-file, retries across restart, and cleans only forced-deleted project memberships", async () => {
+    const { ChatFolderId } = await import("@t3tools/contracts");
+    const { CHAT_ORGANIZATION_ID } = await import("@t3tools/shared/chatOrganization");
+    const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-folders-"));
+    const databasePath = NodePath.join(directory, "state.sqlite");
+    let system = await createOrchestrationSystem(databasePath);
+    const folderId = ChatFolderId.make("shared-folder");
+    const projectId = ProjectId.make("repo-a");
+    const otherProjectId = ProjectId.make("repo-b");
+    const threadId = ThreadId.make("filed-chat");
+    const createThread: OrchestrationCommand = {
+      type: "thread.create",
+      commandId: CommandId.make("create-filed"),
+      threadId,
+      projectId,
+      title: "Filed",
+      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: "feature/existing",
+      worktreePath: "/tmp/existing-worktree",
+      createdAt: now(),
+      chatFolderId: folderId,
+    };
+    const dispatch = (command: OrchestrationCommand) => system.run(system.engine.dispatch(command));
+    try {
+      for (const id of [projectId, otherProjectId])
+        await dispatch({
+          type: "project.create",
+          commandId: CommandId.make(`create-${id}`),
+          projectId: id,
+          title: id,
+          workspaceRoot: `/tmp/${id}`,
+          createdAt: now(),
+        });
+      await dispatch({
+        type: "chatFolder.create",
+        commandId: CommandId.make("folder-create"),
+        organizationId: CHAT_ORGANIZATION_ID,
+        expectedRevision: 0,
+        folderId,
+        parentId: null,
+        name: "Shared work",
+      });
+      const accepted = await dispatch(createThread);
+      expect(await dispatch(createThread)).toEqual(accepted);
+      await dispatch({
+        ...createThread,
+        commandId: CommandId.make("other-chat"),
+        projectId: otherProjectId,
+        threadId: ThreadId.make("other-chat"),
+      });
+      await dispatch({
+        type: "chatOrganization.assignThreads",
+        commandId: CommandId.make("ordered-membership"),
+        organizationId: CHAT_ORGANIZATION_ID,
+        expectedRevision: (await system.readModel()).chatOrganization!.revision,
+        threadIds: [threadId],
+        folderId,
+        orderedThreadIds: [ThreadId.make("other-chat"), threadId],
+      });
+      const before = await system.readModel();
+      expect(
+        before.chatOrganization?.memberships.find((member) => member.threadId === threadId)
+          ?.position,
+      ).toBe(1);
+      await expect(
+        dispatch({
+          ...createThread,
+          commandId: CommandId.make("missing-folder"),
+          threadId: ThreadId.make("must-not-exist"),
+          chatFolderId: ChatFolderId.make("missing"),
+        }),
+      ).rejects.toThrow();
+      expect(
+        (await system.readModel()).threads.some((thread) => thread.id === "must-not-exist"),
+      ).toBe(false);
+      for (const type of ["thread.settle", "thread.archive", "thread.unarchive"] as const) {
+        await dispatch({ type, commandId: CommandId.make(type), threadId });
+        expect((await system.readModel()).chatOrganization).toEqual(before.chatOrganization);
+      }
+      expect(before.chatOrganization?.memberships).toHaveLength(2);
+      expect(before.threads.find((t) => t.id === threadId)?.branch).toBe("feature/existing");
+      await system.dispose();
+      system = await createOrchestrationSystem(databasePath);
+      expect(await dispatch(createThread)).toEqual(accepted);
+      const restarted = await system.readModel();
+      expect(restarted.chatOrganization).toEqual(before.chatOrganization);
+      const query = system.snapshotQuery;
+      expect((await system.run(query.getShellSnapshot())).chatOrganization).toEqual(
+        before.chatOrganization,
+      );
+      expect((await system.run(query.getCommandReadModel())).chatOrganization).toEqual(
+        before.chatOrganization,
+      );
+      const remove: OrchestrationCommand = {
+        type: "project.delete",
+        commandId: CommandId.make("delete-repo"),
+        projectId,
+        force: true,
+      };
+      const removed = await dispatch(remove);
+      expect(await dispatch(remove)).toEqual(removed);
+      const after = await system.readModel();
+      expect(after.chatOrganization?.folders).toHaveLength(1);
+      expect(after.chatOrganization?.memberships).toEqual([
+        { threadId: ThreadId.make("other-chat"), folderId, position: 0 },
+      ]);
+      await expect(
+        dispatch({
+          ...createThread,
+          projectId: otherProjectId,
+          threadId: ThreadId.make("collision"),
+        }),
+      ).rejects.toThrow();
+    } finally {
+      await system.dispose();
+      await NodeFSP.rm(directory, { recursive: true, force: true });
+    }
+  });
+  it("serializes competing folder edits and rejects stale destinations atomically", async () => {
+    const { ChatFolderId } = await import("@t3tools/contracts");
+    const { CHAT_ORGANIZATION_ID } = await import("@t3tools/shared/chatOrganization");
+    const system = await createOrchestrationSystem();
+    try {
+      const dispatch = (command: OrchestrationCommand) =>
+        system.run(system.engine.dispatch(command));
+      const commands = ["a", "b"].map((name) => ({
+        type: "chatFolder.create" as const,
+        commandId: CommandId.make(name),
+        organizationId: CHAT_ORGANIZATION_ID,
+        expectedRevision: 0,
+        folderId: ChatFolderId.make(name),
+        parentId: null,
+        name,
+      }));
+      const result = await Promise.allSettled(commands.map(dispatch));
+      expect(result.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+      expect((await system.readModel()).chatOrganization?.folders).toHaveLength(1);
+    } finally {
+      await system.dispose();
+    }
   });
 });

@@ -18,6 +18,8 @@ export type ThreadActionMenuId =
   | "unsnooze"
   | "rename"
   | "regenerate-title"
+  | "move-to-folder"
+  | "reveal-folder"
   | "branch-naming"
   | "mark-unread"
   | "copy"
@@ -37,6 +39,7 @@ export interface ThreadActionMenuState {
   /** Archive rejects a thread with an active turn, so disable it here rather than let the action fail. */
   readonly isRunning: boolean;
   readonly supports: {
+    readonly chatOrganization?: boolean;
     readonly settlement: boolean;
     readonly snooze: boolean;
     readonly pinning: boolean;
@@ -54,6 +57,12 @@ export function buildThreadActionMenuItems(
   state: ThreadActionMenuState,
 ): ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> {
   return [
+    ...(state.supports.chatOrganization
+      ? [
+          { id: "move-to-folder" as const, label: "Move to folder…" },
+          { id: "reveal-folder" as const, label: "Reveal folder" },
+        ]
+      : []),
     ...(state.branch
       ? [
           {

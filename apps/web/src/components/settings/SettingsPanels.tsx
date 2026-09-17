@@ -521,6 +521,9 @@ export function useSettingsRestore(onRestored?: () => void) {
 
   const changedSettingLabels = useMemo(
     () => [
+      ...(settings.sidebarLayout !== DEFAULT_UNIFIED_SETTINGS.sidebarLayout
+        ? ["Conversation sidebar layout"]
+        : []),
       ...(theme !== "system" ? ["Theme"] : []),
       ...(!followSystem ? ["Follow system"] : []),
       ...(themeHalves !== null ? ["Theme mix"] : []),
@@ -672,6 +675,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.sidebarAutoSettleAfterDays,
       settings.sidebarAutoSettleOnMerge,
       settings.sidebarProjectGroupingMode,
+      settings.sidebarLayout,
       settings.sidebarThreadPreviewCount,
       settings.showSkillsInSlashMenu,
       settings.timestampFormat,
@@ -766,6 +770,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       environmentIdentificationMode: DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode,
       glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
       panelAnimationDurationMs: DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs,
+      sidebarLayout: DEFAULT_UNIFIED_SETTINGS.sidebarLayout,
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
@@ -1174,6 +1179,35 @@ export function AppearanceSettingsPanel() {
 
   return (
     <SettingsPageContainer>
+      <SettingsSection id="sidebar-layout" title="Conversation sidebar">
+        <SettingsRow
+          {...searchableSetting("sidebar-layout")}
+          description="Group conversations into folders across projects. Existing keeps your current modern or legacy sidebar."
+          control={
+            <select
+              aria-label="Conversation sidebar layout"
+              className="rounded border bg-background px-3 py-2 text-sm"
+              value={settings.sidebarLayout}
+              onChange={(event) =>
+                updateSettings({
+                  sidebarLayout: event.target.value === "explorer" ? "explorer" : "existing",
+                })
+              }
+            >
+              <option value="existing">Existing</option>
+              <option value="explorer">Explorer</option>
+            </select>
+          }
+        />
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={settings.sidebarLayout === "existing"}
+          onClick={() => updateSettings({ sidebarLayout: "existing" })}
+        >
+          Reset layout
+        </Button>
+      </SettingsSection>
       <SettingsSection id="appearance" title="Colors & themes" variant="plain" hideTitle>
         <div id={searchableSetting("theme").id}>
           <ThemeLibrary
