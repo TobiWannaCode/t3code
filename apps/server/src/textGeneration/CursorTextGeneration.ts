@@ -222,6 +222,7 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
     Effect.fn("CursorTextGeneration.generateBranchName")(function* (input) {
       const { prompt, outputSchema } = buildBranchNamePrompt({
         message: input.message,
+        branchNamingPolicy: input.branchNamingPolicy,
         attachments: input.attachments,
       });
 
@@ -234,6 +235,7 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
       });
 
       return {
+        ...generated,
         branch: sanitizeBranchFragment(generated.branch),
       };
     });

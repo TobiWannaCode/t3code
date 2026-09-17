@@ -371,6 +371,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
     Effect.fn("ClaudeTextGeneration.generateBranchName")(function* (input) {
       const { prompt, outputSchema } = buildBranchNamePrompt({
         message: input.message,
+        branchNamingPolicy: input.branchNamingPolicy,
         attachments: input.attachments,
       });
 
@@ -383,6 +384,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       });
 
       return {
+        ...generated,
         branch: sanitizeBranchFragment(generated.branch),
       };
     });

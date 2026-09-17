@@ -50,6 +50,7 @@ export interface PrContentGenerationResult {
 }
 
 export interface BranchNameGenerationInput {
+  branchNamingPolicy?: import("@t3tools/contracts").BranchNamingPolicy | null | undefined;
   cwd: string;
   message: string;
   attachments?: ReadonlyArray<ChatAttachment> | undefined;
@@ -58,6 +59,8 @@ export interface BranchNameGenerationInput {
 }
 
 export interface BranchNameGenerationResult {
+  ruleId?: string | null | undefined;
+  slug?: string | undefined;
   branch: string;
 }
 

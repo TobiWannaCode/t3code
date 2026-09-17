@@ -1,3 +1,6 @@
+import type { BranchNamingPolicy } from "@t3tools/contracts";
+import { normalizeBranchSlug, selectBranchNamingRule } from "@t3tools/shared/branchNaming";
+import { availableBranchName } from "./branchNamingGit.ts";
 import * as Arr from "effect/Array";
 import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
@@ -92,6 +95,7 @@ export type GitBranchPullRequest = NonNullable<VcsStatusResult["pr"]> & {
 };
 
 interface SourceControlTextGenerationSettings {
+  readonly branchNaming?: BranchNamingPolicy | null;
   readonly modelSelection: ModelSelection;
   readonly style: SourceControlWritingStyleSettings;
 }
@@ -2571,7 +2575,7 @@ export const make = Effect.gen(function* () {
       branch,
       ...(commitMessage ? { commitMessage } : {}),
       ...(filePaths ? { filePaths } : {}),
-      includeBranch: true,
+      includeBranch: !settings.branchNaming,
       settings,
     });
     if (!suggestion) {
@@ -2582,9 +2586,49 @@ export const make = Effect.gen(function* () {
       });
     }
 
-    const preferredBranch = suggestion.branch ?? sanitizeFeatureBranchName(suggestion.subject);
-    const existingBranchNames = yield* gitCore.listLocalBranchNames(cwd);
-    const resolvedBranch = resolveAutoFeatureBranchName(existingBranchNames, preferredBranch);
+    let resolvedBranch: string;
+    if (settings.branchNaming) {
+      const generated = yield* textGeneration.generateBranchName({
+        cwd,
+        message: suggestion.commitMessage,
+        modelSelection: settings.modelSelection,
+        branchNamingPolicy: settings.branchNaming,
+      });
+      const selected = yield* Effect.try({
+        try: () => ({
+          template: selectBranchNamingRule(settings.branchNaming!, generated.ruleId ?? null)
+            .template,
+          slug: normalizeBranchSlug(generated.slug ?? ""),
+        }),
+        catch: (cause) =>
+          new GitManagerError({
+            operation: "runFeatureBranchStep",
+            cwd,
+            detail: String(cause),
+            cause,
+          }),
+      });
+      resolvedBranch = yield* availableBranchName(
+        gitCore,
+        cwd,
+        selected.template,
+        selected.slug,
+      ).pipe(
+        Effect.mapError(
+          (cause) =>
+            new GitManagerError({
+              operation: "runFeatureBranchStep",
+              cwd,
+              detail: cause.message,
+              cause,
+            }),
+        ),
+      );
+    } else {
+      const preferredBranch = suggestion.branch ?? sanitizeFeatureBranchName(suggestion.subject);
+      const existingBranchNames = yield* gitCore.listLocalBranchNames(cwd);
+      resolvedBranch = resolveAutoFeatureBranchName(existingBranchNames, preferredBranch);
+    }
 
     yield* gitCore.createRef({ cwd, refName: resolvedBranch });
     yield* Effect.scoped(gitCore.switchRef({ cwd, refName: resolvedBranch }));
@@ -2667,6 +2711,7 @@ export const make = Effect.gen(function* () {
               ? Effect.succeed({
                   modelSelection: settings.textGenerationModelSelection,
                   style: settings.sourceControlWritingStyle,
+                  branchNaming: settings.branchNaming,
                 })
               : providerRegistry.getProviders.pipe(
                   Effect.map((providers) => ({
@@ -2675,6 +2720,7 @@ export const make = Effect.gen(function* () {
                       providers,
                     ),
                     style: settings.sourceControlWritingStyle,
+                    branchNaming: settings.branchNaming,
                   })),
                 ),
           ),

@@ -1,3 +1,4 @@
+import { BranchNamingOperation } from "./branchNaming.ts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
@@ -820,6 +821,7 @@ export const OrchestrationThread = Schema.Struct({
   // Pending-only state. Optional so older servers remain compatible.
   titleRegeneration: Schema.optional(Schema.NullOr(ThreadTitleRegeneration)),
   titleState: Schema.optional(Schema.NullOr(ThreadTitleState)),
+  branchNaming: Schema.optional(Schema.NullOr(BranchNamingOperation)),
   deletedAt: Schema.NullOr(IsoDateTime),
   messages: Schema.Array(OrchestrationMessage),
   proposedPlans: Schema.Array(OrchestrationProposedPlan).pipe(
@@ -889,6 +891,7 @@ export const OrchestrationThreadShell = Schema.Struct({
   activeOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   titleRegeneration: Schema.optional(Schema.NullOr(ThreadTitleRegeneration)),
   titleState: Schema.optional(Schema.NullOr(ThreadTitleState)),
+  branchNaming: Schema.optional(Schema.NullOr(BranchNamingOperation)),
   session: Schema.NullOr(OrchestrationSession),
   latestUserMessageAt: Schema.NullOr(IsoDateTime),
   hasPendingApprovals: Schema.Boolean,
@@ -1204,6 +1207,35 @@ const ThreadActiveReorderCommand = Schema.Struct({
   orderKey: TrimmedNonEmptyString,
 });
 
+const ThreadBranchRegenerateCommand = Schema.Struct({
+  type: Schema.Literal("thread.branch.regenerate"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  expectedBranch: Schema.String,
+  createdAt: IsoDateTime,
+});
+const ThreadBranchRecheckCommand = Schema.Struct({
+  type: Schema.Literal("thread.branch-naming.recheck"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  operationId: Schema.String,
+});
+const ThreadBranchRepairCommand = Schema.Struct({
+  type: Schema.Literal("thread.branch-naming.use-current-branch"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  operationId: Schema.String,
+  branch: Schema.String,
+  oid: Schema.String,
+});
+const ThreadBranchNamingSetCommand = Schema.Struct({
+  type: Schema.Literal("thread.branch-naming.set"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  expectedRevision: Schema.NullOr(Schema.Int),
+  operation: BranchNamingOperation,
+});
+
 const ThreadMetaUpdateCommand = Schema.Struct({
   type: Schema.Literal("thread.meta.update"),
   commandId: CommandId,
@@ -1390,6 +1422,9 @@ const ThreadSessionStopCommand = Schema.Struct({
 });
 
 const DispatchableClientOrchestrationCommand = Schema.Union([
+  ThreadBranchRegenerateCommand,
+  ThreadBranchRecheckCommand,
+  ThreadBranchRepairCommand,
   ProjectCreateCommand,
   ProjectMetaUpdateCommand,
   ProjectDeleteCommand,
@@ -1423,6 +1458,9 @@ export type DispatchableClientOrchestrationCommand =
   typeof DispatchableClientOrchestrationCommand.Type;
 
 export const ClientOrchestrationCommand = Schema.Union([
+  ThreadBranchRegenerateCommand,
+  ThreadBranchRecheckCommand,
+  ThreadBranchRepairCommand,
   ProjectCreateCommand,
   ProjectMetaUpdateCommand,
   ProjectDeleteCommand,
@@ -1622,6 +1660,7 @@ const ThreadPullRequestLinkSyncCommand = Schema.Struct({
 });
 
 const InternalOrchestrationCommand = Schema.Union([
+  ThreadBranchNamingSetCommand,
   ThreadAutoSettleCommand,
   ThreadPullRequestSyncCommand,
   ThreadPullRequestLinkSyncCommand,
@@ -1651,6 +1690,8 @@ export const OrchestrationCommand = Schema.Union([
 export type OrchestrationCommand = typeof OrchestrationCommand.Type;
 
 export const OrchestrationEventType = Schema.Literals([
+  "thread.branch-naming-updated",
+  "thread.branch-naming-recovery-requested",
   "project.created",
   "project.meta-updated",
   "project.deleted",
@@ -1801,6 +1842,17 @@ export const ThreadPinReorderedPayload = Schema.Struct({
   threadId: ThreadId,
   orderKey: TrimmedNonEmptyString,
   updatedAt: IsoDateTime,
+});
+
+export const ThreadBranchNamingUpdatedPayload = Schema.Struct({
+  threadId: ThreadId,
+  operation: BranchNamingOperation,
+});
+export const ThreadBranchNamingRecoveryPayload = Schema.Struct({
+  threadId: ThreadId,
+  operationId: Schema.String,
+  branch: Schema.optional(Schema.String),
+  oid: Schema.optional(Schema.String),
 });
 
 export const ThreadMetaUpdatedPayload = Schema.Struct({
@@ -1996,6 +2048,16 @@ const EventBaseFields = {
 } as const;
 
 export const OrchestrationEvent = Schema.Union([
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.branch-naming-updated"),
+    payload: ThreadBranchNamingUpdatedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.branch-naming-recovery-requested"),
+    payload: ThreadBranchNamingRecoveryPayload,
+  }),
   Schema.Struct({
     ...EventBaseFields,
     type: Schema.Literal("project.created"),

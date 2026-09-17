@@ -643,6 +643,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     scope: "environment-defaults",
   },
   {
+    id: "branch-naming",
+    title: "Branch naming rules",
+    to: "/settings/source-control",
+    scope: "project-defaults",
+    searchTerms: ["branch naming conventions formats rules AI message regenerate"],
+  },
+  {
     id: "source-control-writing-style",
     title: "Source control writing style",
     to: "/settings/source-control",

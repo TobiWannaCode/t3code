@@ -330,3 +330,18 @@ describe("normalizeCliError", () => {
     expect(result.message).not.toContain("secret-token");
   });
 });
+
+it("keeps recent branch context and requires rule selection without changing literal formats", () => {
+  const { prompt, outputSchema } = buildBranchNamePrompt({
+    message: `Initial task\n${"intermediate context ".repeat(700)}\nLatest constraint: add regression tests`,
+    branchNamingPolicy: {
+      rules: [{ id: "test", template: "Team/{AI_MESSAGE}-WIP", description: "Regression tests" }],
+      fallbackRuleId: null,
+    },
+  });
+  expect(prompt).toContain("Latest constraint: add regression tests");
+  expect(prompt).toContain("Team/{AI_MESSAGE}-WIP");
+  expect(toJsonSchemaObject(outputSchema)).toMatchObject({
+    required: ["branch", "ruleId", "slug"],
+  });
+});

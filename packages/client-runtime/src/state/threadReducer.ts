@@ -250,6 +250,8 @@ export function applyThreadDetailEvent(
       };
 
     // ── Thread metadata ─────────────────────────────────────────────
+    case "thread.branch-naming-updated":
+      return { kind: "updated", thread: { ...thread, branchNaming: event.payload.operation } };
     case "thread.meta-updated":
       return {
         kind: "updated",

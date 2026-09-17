@@ -1,3 +1,5 @@
+import { LOCAL_DESKTOP_BUILD } from "@t3tools/shared/desktopBuild";
+
 import type {
   DesktopAppBranding,
   DesktopAppStageLabel,
@@ -19,6 +21,7 @@ import { isNightlyDesktopVersion } from "../updates/updateChannels.ts";
 import type { OtlpProtocol } from "@t3tools/shared/observability";
 
 export interface MakeDesktopEnvironmentInput {
+  readonly isLocalBuild?: boolean;
   readonly dirname: string;
   readonly homeDirectory: string;
   readonly platform: NodeJS.Platform;
@@ -152,7 +155,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
   const path = yield* Path.Path;
   const config = yield* DesktopConfig.DesktopConfig;
   const homeDirectory = input.homeDirectory;
-  const devServerUrl = config.devServerUrl;
+  const devServerUrl = input.isLocalBuild ? Option.none<URL>() : config.devServerUrl;
   const isDevelopment = Option.isSome(devServerUrl);
   const appDataDirectory =
     input.platform === "win32"
@@ -165,7 +168,9 @@ const make = Effect.fn("desktop.environment.make")(function* (
   const baseDir = resolveDesktopBaseDir({
     homeDirectory,
     joinPath: path.join,
-    t3Home: config.t3Home,
+    t3Home: input.isLocalBuild
+      ? Option.some(path.join(homeDirectory, LOCAL_DESKTOP_BUILD.homeDirName))
+      : config.t3Home,
   });
   const rootDir = path.resolve(input.dirname, "../../..");
   const appRoot = input.isPackaged ? input.appPath : rootDir;
@@ -173,10 +178,16 @@ const make = Effect.fn("desktop.environment.make")(function* (
     input.isPackaged && input.platform === "win32"
       ? path.join(input.resourcesPath, "server.asar")
       : appRoot;
-  const branding = resolveDesktopAppBranding({
-    isDevelopment,
-    appVersion: input.appVersion,
-  });
+  const branding = input.isLocalBuild
+    ? {
+        baseName: APP_BASE_NAME,
+        stageLabel: "Local" as const,
+        displayName: LOCAL_DESKTOP_BUILD.productName,
+      }
+    : resolveDesktopAppBranding({
+        isDevelopment,
+        appVersion: input.appVersion,
+      });
   const displayName = branding.displayName;
   const stateDir = resolveDesktopStateDir({
     baseDir,
@@ -184,8 +195,16 @@ const make = Effect.fn("desktop.environment.make")(function* (
     joinPath: path.join,
     t3Home: config.t3Home,
   });
-  const userDataDirName = isDevelopment ? "t3code-dev" : "t3code";
-  const legacyUserDataDirName = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)";
+  const userDataDirName = input.isLocalBuild
+    ? LOCAL_DESKTOP_BUILD.userDataDirName
+    : isDevelopment
+      ? "t3code-dev"
+      : "t3code";
+  const legacyUserDataDirName = input.isLocalBuild
+    ? LOCAL_DESKTOP_BUILD.userDataDirName
+    : isDevelopment
+      ? "T3 Code (Dev)"
+      : "T3 Code (Alpha)";
   const linuxApplicationsDir = path.join(
     Option.getOrElse(config.xdgDataHome, () => path.join(homeDirectory, ".local", "share")),
     "applications",
@@ -232,9 +251,11 @@ const make = Effect.fn("desktop.environment.make")(function* (
     otlpProtocol: config.otlpProtocol,
     branding,
     displayName,
-    appUserModelId: Option.getOrElse(config.appUserModelIdOverride, () =>
-      isDevelopment ? "com.t3tools.t3code.dev" : "com.t3tools.t3code",
-    ),
+    appUserModelId: input.isLocalBuild
+      ? LOCAL_DESKTOP_BUILD.appId
+      : Option.getOrElse(config.appUserModelIdOverride, () =>
+          isDevelopment ? "com.t3tools.t3code.dev" : "com.t3tools.t3code",
+        ),
     linuxDesktopEntryName: resolveLinuxDesktopEntryName(isDevelopment),
     linuxWmClass: isDevelopment ? "t3code-dev" : "t3code",
     linuxApplicationsDir,

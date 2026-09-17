@@ -61,11 +61,11 @@ function useRunScopedPlan() {
           title: "Setting not saved",
           description: plan.unavailableReason,
         });
-        return;
+        return Promise.resolve(false);
       }
-      void persistScopedSettingsPatch(plan, persistServer, persistClientSettingsPatch).then(
+      return persistScopedSettingsPatch(plan, persistServer, persistClientSettingsPatch).then(
         ({ failedEnvironments, savedEnvironmentCount }) => {
-          if (failedEnvironments.length === 0) return;
+          if (failedEnvironments.length === 0) return true;
           toastManager.add({
             type: "error",
             title:
@@ -74,6 +74,7 @@ function useRunScopedPlan() {
                 : "Setting not saved",
             description: `Could not update ${failedEnvironments.map((environment) => environment.label).join(", ")}.${savedEnvironmentCount > 0 ? " The other selected environments saved the change." : ""}`,
           });
+          return false;
         },
       );
     },

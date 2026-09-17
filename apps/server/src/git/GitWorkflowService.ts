@@ -1,3 +1,4 @@
+import { GitMutationCoordinator, GitMutationCoordinatorLive } from "./GitMutationCoordinator.ts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -154,6 +155,7 @@ export const make = Effect.gen(function* () {
   const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
   const git = yield* GitVcsDriver.GitVcsDriver;
   const gitManager = yield* GitManager.GitManager;
+  const coordinator = yield* GitMutationCoordinator;
 
   const ensureGit = Effect.fn("GitWorkflowService.ensureGit")(function* (
     operation: string,
@@ -320,11 +322,13 @@ export const make = Effect.gen(function* () {
     invalidateStatus: gitManager.invalidateStatus,
     pullCurrentBranch: (cwd) =>
       ensureGitCommand("GitWorkflowService.pullCurrentBranch", cwd).pipe(
-        Effect.andThen(git.pullCurrentBranch(cwd)),
+        Effect.andThen(coordinator.withRepository(cwd, git.pullCurrentBranch(cwd))),
       ),
     runStackedAction: (input, options) =>
       ensureGit("GitWorkflowService.runStackedAction", input.cwd).pipe(
-        Effect.andThen(gitManager.runStackedAction(input, options)),
+        Effect.andThen(
+          coordinator.withRepository(input.cwd, gitManager.runStackedAction(input, options)),
+        ),
       ),
     resolvePullRequest: routeGitManager(
       "GitWorkflowService.resolvePullRequest",
@@ -342,7 +346,7 @@ export const make = Effect.gen(function* () {
       ),
     createWorktree: (input, options) =>
       ensureGitCommand("GitWorkflowService.createWorktree", input.cwd).pipe(
-        Effect.andThen(git.createWorktree(input, options)),
+        Effect.andThen(coordinator.withRepository(input.cwd, git.createWorktree(input, options))),
       ),
     fetchRemote: (input) =>
       ensureGitCommand("GitWorkflowService.fetchRemote", input.cwd).pipe(
@@ -362,25 +366,27 @@ export const make = Effect.gen(function* () {
       ),
     removeWorktree: (input) =>
       ensureGitCommand("GitWorkflowService.removeWorktree", input.cwd).pipe(
-        Effect.andThen(git.removeWorktree(input)),
+        Effect.andThen(coordinator.withRepository(input.cwd, git.removeWorktree(input))),
       ),
     pruneWorktrees: (input) =>
       ensureGitCommand("GitWorkflowService.pruneWorktrees", input.cwd).pipe(
-        Effect.andThen(git.pruneWorktrees(input)),
+        Effect.andThen(coordinator.withRepository(input.cwd, git.pruneWorktrees(input))),
       ),
     createRef: (input) =>
       ensureGitCommand("GitWorkflowService.createRef", input.cwd).pipe(
-        Effect.andThen(git.createRef(input)),
+        Effect.andThen(coordinator.withRepository(input.cwd, git.createRef(input))),
       ),
     switchRef: (input) =>
       ensureGitCommand("GitWorkflowService.switchRef", input.cwd).pipe(
-        Effect.andThen(Effect.scoped(git.switchRef(input))),
+        Effect.andThen(coordinator.withRepository(input.cwd, Effect.scoped(git.switchRef(input)))),
       ),
     renameBranch: (input) =>
       ensureGit("GitWorkflowService.renameBranch", input.cwd).pipe(
-        Effect.andThen(git.renameBranch(input)),
+        Effect.andThen(coordinator.withRepository(input.cwd, git.renameBranch(input))),
       ),
   });
 });
 
-export const layer = Layer.effect(GitWorkflowService, make);
+export const layer = Layer.effect(GitWorkflowService, make).pipe(
+  Layer.provideMerge(GitMutationCoordinatorLive),
+);

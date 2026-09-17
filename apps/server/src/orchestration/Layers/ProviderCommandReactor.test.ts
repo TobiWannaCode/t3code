@@ -2536,16 +2536,10 @@ describe("ProviderCommandReactor", () => {
     expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({ input: prompt });
   });
 
-  it("generates a worktree branch name for the first turn", async () => {
+  it("queues durable branch naming for the first turn", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
     const prompt = `Add a safer reconnect backoff. ${serializeAssistantCitation(assistantCitation)}`;
-    const statusRefreshed = await harness.runEffect(Deferred.make<void>());
-    const refreshStatus = harness.refreshStatus.getMockImplementation()!;
-    harness.refreshStatus.mockImplementation((cwd) =>
-      refreshStatus(cwd).pipe(Effect.tap(() => Deferred.succeed(statusRefreshed, undefined))),
-    );
-
     await harness.runEffect(
       harness.engine.dispatch({
         type: "thread.meta.update",
@@ -2553,21 +2547,6 @@ describe("ProviderCommandReactor", () => {
         threadId: ThreadId.make("thread-1"),
         branch: "t3code/1234abcd",
         worktreePath: "/tmp/provider-project-worktree",
-      }),
-    );
-
-    harness.generateBranchName.mockImplementation((input: unknown) =>
-      Effect.succeed({
-        branch:
-          typeof input === "object" &&
-          input !== null &&
-          "modelSelection" in input &&
-          typeof input.modelSelection === "object" &&
-          input.modelSelection !== null &&
-          "model" in input.modelSelection &&
-          typeof input.modelSelection.model === "string"
-            ? `feature/${input.modelSelection.model}`
-            : "feature/generated",
       }),
     );
 
@@ -2588,14 +2567,12 @@ describe("ProviderCommandReactor", () => {
       }),
     );
 
-    await harness.runEffect(Deferred.await(statusRefreshed));
     await harness.drain();
-    expect(harness.generateBranchName.mock.calls[0]?.[0].message).toBe(
-      `Add a safer reconnect backoff. ${assistantQuoteText}`,
-    );
-    expect(harness.generateBranchName.mock.calls[0]?.[0].message).not.toContain("t3-citation://");
-    expect(harness.refreshStatus.mock.calls[0]?.[0]).toBe("/tmp/provider-project-worktree");
+    expect(harness.generateBranchName).not.toHaveBeenCalled();
     const readModel = await harness.readModel();
+    expect(
+      readModel.threads.find((thread) => thread.id === ThreadId.make("thread-1"))?.branchNaming,
+    ).toMatchObject({ source: "initial", state: "queued", expectedBranch: "t3code/1234abcd" });
     expect(
       readModel.threads
         .find((entry) => entry.id === ThreadId.make("thread-1"))

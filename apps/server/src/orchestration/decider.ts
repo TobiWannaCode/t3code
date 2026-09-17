@@ -1,3 +1,4 @@
+import { decideBranchNaming, namingNeedsRecovery } from "./branchNamingDecider.ts";
 import {
   EventId,
   MAX_SCRIPT_ID_LENGTH,
@@ -221,7 +222,54 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
   OrchestrationCommandRejection | PlatformError.PlatformError,
   Crypto.Crypto
 > {
+  if (
+    "threadId" in command &&
+    ["thread.delete", "thread.archive", "thread.meta.update", "thread.turn.start"].includes(
+      command.type,
+    )
+  ) {
+    const recovery = readModel.threads.find(
+      (entry) =>
+        namingNeedsRecovery(entry.branchNaming) &&
+        (entry.id === command.threadId ||
+          entry.branchNaming?.affectedThreadIds?.includes(command.threadId)),
+    );
+    if (
+      recovery &&
+      (command.type !== "thread.meta.update" ||
+        command.branch !== undefined ||
+        command.worktreePath !== undefined)
+    ) {
+      return yield* new OrchestrationCommandInvariantError({
+        commandType: command.type,
+        detail: "Reconcile the pending branch rename before changing this workspace.",
+      });
+    }
+  }
+  if (
+    command.type === "project.meta.update" &&
+    command.workspaceRoot !== undefined &&
+    readModel.threads.some(
+      (thread) =>
+        namingNeedsRecovery(thread.branchNaming) &&
+        (thread.projectId === command.projectId ||
+          readModel.threads.some(
+            (linked) =>
+              linked.projectId === command.projectId &&
+              thread.branchNaming?.affectedThreadIds?.includes(linked.id),
+          )),
+    )
+  )
+    return yield* new OrchestrationCommandInvariantError({
+      commandType: command.type,
+      detail: "Reconcile the pending branch rename before changing its project workspace.",
+    });
   switch (command.type) {
+    case "thread.branch.regenerate":
+    case "thread.branch-naming.set":
+    case "thread.branch-naming.recheck":
+    case "thread.branch-naming.use-current-branch":
+      return yield* decideBranchNaming(command, readModel);
     case "project.create": {
       yield* requireProjectAbsent({
         readModel,

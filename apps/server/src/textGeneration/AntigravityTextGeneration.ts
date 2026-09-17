@@ -381,10 +381,14 @@ export const makeAntigravityTextGeneration = Effect.fn("makeAntigravityTextGener
     Effect.fn("AntigravityTextGeneration.generateBranchName")(function* (input) {
       const generated = yield* runAntigravityJson({
         operation: "generateBranchName",
-        ...buildBranchNamePrompt({ message: input.message, attachments: input.attachments }),
+        ...buildBranchNamePrompt({
+          message: input.message,
+          branchNamingPolicy: input.branchNamingPolicy,
+          attachments: input.attachments,
+        }),
         modelSelection: input.modelSelection,
       });
-      return { branch: sanitizeBranchFragment(generated.branch) };
+      return { ...generated, branch: sanitizeBranchFragment(generated.branch) };
     });
 
   const generateThreadTitle: TextGeneration.TextGeneration["Service"]["generateThreadTitle"] =

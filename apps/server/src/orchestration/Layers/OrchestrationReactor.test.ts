@@ -1,3 +1,4 @@
+import { BranchNamingReactor } from "./BranchNamingReactor.ts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
@@ -31,6 +32,14 @@ describe("OrchestrationReactor", () => {
 
     runtime = ManagedRuntime.make(
       Layer.effect(OrchestrationReactor, makeOrchestrationReactor).pipe(
+        Layer.provide(
+          Layer.succeed(BranchNamingReactor, {
+            start: () =>
+              Effect.sync(() => {
+                started.push("branch-naming");
+              }),
+          }),
+        ),
         Layer.provideMerge(
           Layer.succeed(ProviderRuntimeIngestionService, {
             start: () => {
@@ -113,6 +122,7 @@ describe("OrchestrationReactor", () => {
 
     expect(started).toEqual([
       "provider-runtime-ingestion",
+      "branch-naming",
       "provider-command-reactor",
       "checkpoint-reactor",
       "thread-deletion-reactor",

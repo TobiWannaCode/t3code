@@ -278,6 +278,24 @@ const makeFixture = Effect.fn("makeAntigravityTextGenerationFixture")(function* 
 });
 
 it.layer(NodeServices.layer)("AntigravityTextGeneration", (it) => {
+  it.effect("returns the selected naming rule and slug", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeFixture({
+        outputs: ['{"branch":"fix-login","ruleId":"fix","slug":"fix-login"}'],
+      });
+      const result = yield* fixture.textGeneration.generateBranchName({
+        cwd: fixture.projectDirectory,
+        modelSelection,
+        message: "Fix login",
+        branchNamingPolicy: {
+          rules: [{ id: "fix", template: "Team/{AI_MESSAGE}-WIP", description: "Fixes" }],
+          fallbackRuleId: null,
+        },
+      });
+      expect(result).toEqual({ branch: "fix-login", ruleId: "fix", slug: "fix-login" });
+    }),
+  );
+
   it.effect(
     "generates all helper types in empty workspaces and removes only owned session files",
     () =>

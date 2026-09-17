@@ -332,6 +332,17 @@ export function projectEvent(
   };
 
   switch (event.type) {
+    case "thread.branch-naming-recovery-requested":
+      return Effect.succeed(nextBase);
+    case "thread.branch-naming-updated":
+      return Effect.succeed({
+        ...nextBase,
+        threads: nextBase.threads.map((thread) =>
+          thread.id === event.payload.threadId
+            ? { ...thread, branchNaming: event.payload.operation }
+            : thread,
+        ),
+      });
     case "project.created":
       return decodeForEvent(ProjectCreatedPayload, event.payload, event.type, "payload").pipe(
         Effect.map((payload) => {

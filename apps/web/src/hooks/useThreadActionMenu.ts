@@ -1,3 +1,4 @@
+import { openBranchNaming } from "../components/BranchNamingDialog";
 import { requestCustomSnooze } from "../components/CustomSnoozeDialog";
 import { scopeProjectRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
@@ -244,6 +245,9 @@ export function useThreadActionMenu(input: {
           }
           case "rename":
             onStartRename();
+            return;
+          case "branch-naming":
+            openBranchNaming(threadRef);
             return;
           case "regenerate-title":
             if (isRegeneratingTitle) return;

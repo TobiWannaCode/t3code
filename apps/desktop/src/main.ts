@@ -9,6 +9,11 @@ import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeOS from "node:os";
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Read the packaged identity before constructing the Effect runtime or touching user data.
+import * as NodeFS from "node:fs";
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Resolve the isolated home before constructing the Effect runtime.
+import * as NodePath from "node:path";
+import { isLocalDesktopBuild, LOCAL_DESKTOP_BUILD } from "@t3tools/shared/desktopBuild";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -68,6 +73,20 @@ import * as DesktopWslBackend from "./wsl/DesktopWslBackend.ts";
 import * as DesktopWslEnvironment from "./wsl/DesktopWslEnvironment.ts";
 import * as DesktopWslServerTree from "./wsl/DesktopWslServerTree.ts";
 
+// Enforce the packaged channel before any settings or backend services start.
+const isLocalBuild =
+  Electron.app.isPackaged &&
+  isLocalDesktopBuild(
+    JSON.parse(
+      NodeFS.readFileSync(NodePath.join(Electron.app.getAppPath(), "package.json"), "utf8"),
+    ),
+  );
+if (isLocalBuild) {
+  process.env.T3CODE_HOME = NodePath.join(NodeOS.homedir(), LOCAL_DESKTOP_BUILD.homeDirName);
+  process.env.T3CODE_DISABLE_AUTO_UPDATE = "true";
+  delete process.env.VITE_DEV_SERVER_URL;
+}
+
 const desktopEnvironmentLayer = Layer.unwrap(
   Effect.gen(function* () {
     const metadata = yield* Effect.service(ElectronApp.ElectronApp).pipe(
@@ -76,6 +95,7 @@ const desktopEnvironmentLayer = Layer.unwrap(
     const platform = yield* HostProcessPlatform;
     const processArch = yield* HostProcessArchitecture;
     return DesktopEnvironment.layer({
+      isLocalBuild,
       dirname: __dirname,
       homeDirectory: NodeOS.homedir(),
       platform,

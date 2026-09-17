@@ -1,3 +1,4 @@
+import { validateBranchNamingPolicy } from "@t3tools/shared/branchNaming";
 /**
  * ServerSettings - Server-authoritative settings service.
  *
@@ -120,6 +121,24 @@ const normalizeServerSettings = (
 ): Effect.Effect<ServerSettings, ServerSettingsError> =>
   encodeServerSettings(settings).pipe(
     Effect.flatMap(decodeServerSettings),
+    Effect.tap((next) =>
+      Effect.gen(function* () {
+        for (const policy of [
+          next.branchNaming,
+          ...Object.values(next.projectSettingsOverrides).map(
+            (entry) => entry.branchNaming ?? null,
+          ),
+        ]) {
+          const detail = validateBranchNamingPolicy(policy);
+          if (detail)
+            return yield* new ServerSettingsError({
+              settingsPath: "<memory>",
+              operation: "normalize",
+              cause: new Error(detail),
+            });
+        }
+      }),
+    ),
     Effect.map(foldProviderInstanceEnabledFlags),
     Effect.map((next) => ({ ...next, ...deriveLegacyProjectOverrides(next) })),
     Effect.mapError(

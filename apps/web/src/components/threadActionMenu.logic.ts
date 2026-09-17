@@ -18,6 +18,7 @@ export type ThreadActionMenuId =
   | "unsnooze"
   | "rename"
   | "regenerate-title"
+  | "branch-naming"
   | "mark-unread"
   | "copy"
   | "copy-path"
@@ -108,6 +109,9 @@ export function buildThreadActionMenuItems(
             disabled: state.isRegeneratingTitle,
           },
         ]
+      : []),
+    ...(state.branch
+      ? [{ id: "branch-naming" as const, label: "Branch naming…", icon: "git-branch" }]
       : []),
     { id: "mark-unread", label: "Mark unread", icon: "mail-open" },
     {

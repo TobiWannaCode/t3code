@@ -1392,3 +1392,26 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 });
+
+it.effect("rejects invalid global and project branch formats before persisting settings", () =>
+  Effect.gen(function* () {
+    const service = yield* ServerSettingsModule.ServerSettingsService;
+    const invalid = {
+      rules: [{ id: "bad", template: "no-placeholder", description: "Everything" }],
+      fallbackRuleId: null,
+    };
+    assert.equal(
+      (yield* service.updateSettings({ branchNaming: invalid }).pipe(Effect.exit))._tag,
+      "Failure",
+    );
+    assert.equal(
+      (yield* service
+        .updateSettings({
+          projectSettingsOverrides: { [ProjectId.make("project")]: { branchNaming: invalid } },
+        })
+        .pipe(Effect.exit))._tag,
+      "Failure",
+    );
+    assert.equal((yield* service.getSettings).branchNaming, null);
+  }).pipe(Effect.provide(makeServerSettingsLayer().pipe(Layer.provide(NodeServices.layer)))),
+);

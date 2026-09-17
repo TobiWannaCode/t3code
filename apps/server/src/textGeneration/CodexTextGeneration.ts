@@ -372,6 +372,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       );
       const { prompt, outputSchema } = buildBranchNamePrompt({
         message: input.message,
+        branchNamingPolicy: input.branchNamingPolicy,
         attachments: input.attachments,
       });
 
@@ -385,6 +386,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       });
 
       return {
+        ...generated,
         branch: sanitizeBranchFragment(generated.branch),
       };
     });

@@ -605,6 +605,17 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       "applyThreadsProjection",
     )(function* (event, attachmentSideEffects) {
       switch (event.type) {
+        case "thread.branch-naming-updated": {
+          const existing = yield* projectionThreadRepository.getById({
+            threadId: event.payload.threadId,
+          });
+          if (Option.isSome(existing))
+            yield* projectionThreadRepository.upsert({
+              ...existing.value,
+              branchNaming: event.payload.operation,
+            });
+          return;
+        }
         case "thread.created":
           // A draft retry can re-create this id; links belong to the old incarnation.
           yield* projectionThreadPullRequestRepository.deleteByThreadId({

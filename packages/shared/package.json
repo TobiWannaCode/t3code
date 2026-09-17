@@ -338,6 +338,14 @@
     "./cliRelease": {
       "types": "./src/cliRelease.ts",
       "import": "./src/cliRelease.ts"
+    },
+    "./desktopBuild": {
+      "types": "./src/desktopBuild.ts",
+      "import": "./src/desktopBuild.ts"
+    },
+    "./branchNaming": {
+      "types": "./src/branchNaming.ts",
+      "import": "./src/branchNaming.ts"
     }
   },
   "scripts": {

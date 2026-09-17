@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { LOCAL_DESKTOP_BUILD } from "@t3tools/shared/desktopBuild";
 // @effect-diagnostics nodeBuiltinImport:off - Node's typed junction API avoids Windows symlink privileges while keeping the probe isolated.
 
 import * as NodeFSP from "node:fs/promises";
@@ -150,6 +151,7 @@ const PLATFORM_CONFIG: Record<typeof BuildPlatform.Type, PlatformConfig> = {
 };
 
 interface BuildCliInput {
+  readonly localTest?: boolean;
   readonly platform: Option.Option<typeof BuildPlatform.Type>;
   readonly target: Option.Option<string>;
   readonly arch: Option.Option<typeof BuildArch.Type>;
@@ -907,6 +909,7 @@ const resolvePythonForNodeGyp = Effect.fn("resolvePythonForNodeGyp")(function* (
 });
 
 interface ResolvedBuildOptions {
+  readonly localTest?: boolean;
   readonly platform: typeof BuildPlatform.Type;
   readonly target: string;
   readonly arch: typeof BuildArch.Type;
@@ -922,6 +925,7 @@ interface ResolvedBuildOptions {
 }
 
 interface StagePackageJson {
+  readonly t3codeBuildChannel?: "local";
   readonly name: string;
   readonly version: string;
   readonly buildVersion: string;
@@ -1660,6 +1664,7 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
     mockUpdates,
     mockUpdateServerPort,
     wslRuntime,
+    localTest: input.localTest ?? false,
   } satisfies ResolvedBuildOptions;
 });
 
@@ -2636,10 +2641,11 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   // source file was never written fails the electron-builder step.
   wslRuntimeBundled = false,
   arch?: typeof BuildArch.Type,
+  localTest = false,
 ) {
   const buildConfig: Record<string, unknown> = {
-    appId: DESKTOP_APP_ID,
-    productName: resolveDesktopProductName(version),
+    appId: localTest ? LOCAL_DESKTOP_BUILD.appId : DESKTOP_APP_ID,
+    productName: localTest ? LOCAL_DESKTOP_BUILD.productName : resolveDesktopProductName(version),
     artifactName: "T3-Code-${version}-${arch}.${ext}",
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
     files: [
@@ -2668,7 +2674,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     ],
   };
   const updateChannel = resolveDesktopUpdateChannel(version);
-  if (!isDesktopPreviewVersion(version)) {
+  if (!localTest && !isDesktopPreviewVersion(version)) {
     const publishConfig = yield* resolveGitHubPublishConfig(updateChannel);
     if (publishConfig) {
       buildConfig.publish = [publishConfig];
@@ -2686,7 +2692,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     const path = yield* Path.Path;
     const repoRoot = yield* RepoRoot;
     buildConfig.mac = {
-      target: target === "dmg" ? [target, "zip"] : [target],
+      ...(localTest ? { identity: "-" } : {}),
+      target: target === "dir" ? [] : target === "dmg" ? [target, "zip"] : [target],
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
       extendInfo: {
@@ -2696,7 +2703,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       protocols: [
         {
           name: "T3 Code",
-          schemes: ["t3code", "t3code-dev"],
+          schemes: localTest ? ["t3code-local"] : ["t3code", "t3code-dev"],
         },
       ],
       ...(signed ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") } : {}),
@@ -3644,6 +3651,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       ? path.join(stageAppDir, WINDOWS_SERVER_RESOURCE_SOURCE_DIR, WINDOWS_SERVER_ASAR_RESOURCE)
       : undefined;
   const stagePackageJson: StagePackageJson = {
+    ...(options.localTest ? { t3codeBuildChannel: LOCAL_DESKTOP_BUILD.channel } : {}),
     name: "t3code",
     version: appVersion,
     buildVersion: appVersion,
@@ -3668,6 +3676,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
         : undefined,
       bundlesWslRuntime({ platform: options.platform, runtimeArchivePath: options.wslRuntime }),
       options.arch,
+      options.localTest,
     ),
     dependencies: stageDependencies,
     devDependencies: {
@@ -3787,6 +3796,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     stageAppDir,
     platformConfig.cliFlag,
     `--${options.arch}`,
+    ...(options.target === "dir" ? ["--dir"] : []),
     "--publish",
     "never",
   ];
@@ -3845,6 +3855,20 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   for (const entry of stageEntries) {
     const from = path.join(stageDistDir, entry);
     const stat = yield* fs.stat(from).pipe(Effect.orElseSucceed(() => null));
+    if (
+      stat?.type === "Directory" &&
+      options.platform === "mac" &&
+      options.target === "dir" &&
+      entry.startsWith("mac")
+    ) {
+      const to = path.join(options.outputDir, entry);
+      yield* runCommand(ChildProcess.make("/usr/bin/ditto", [from, to]), {
+        label: "Copy macOS app preserving framework links",
+        verbose: options.verbose,
+      });
+      copiedArtifacts.push(to);
+      continue;
+    }
     if (!stat || stat.type !== "File") continue;
 
     const to = path.join(options.outputDir, entry);
@@ -3866,6 +3890,9 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
 });
 
 const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
+  localTest: Flag.boolean("local-test").pipe(
+    Flag.withDescription("Build the isolated local test app."),
+  ),
   platform: Flag.choice("platform", BuildPlatform.literals).pipe(
     Flag.withDescription("Build platform (env: T3CODE_DESKTOP_PLATFORM)."),
     Flag.optional,

@@ -1,3 +1,4 @@
+import { BranchNamingPolicy } from "./branchNaming.ts";
 import { SshDeviceHostConfigs } from "./device.ts";
 import * as Effect from "effect/Effect";
 import * as Duration from "effect/Duration";
@@ -968,6 +969,7 @@ export const ResponseStreamingMode = Schema.Literals(["turn", "paragraph", "toke
 export type ResponseStreamingMode = typeof ResponseStreamingMode.Type;
 
 export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
+  "branchNaming",
   "defaultModelSelection",
   "defaultRuntimeMode",
   "defaultThreadEnvMode",
@@ -993,6 +995,7 @@ export type ProjectScopedServerSettingKey = (typeof PROJECT_SCOPED_SERVER_SETTIN
  * model, no dedicated writer model, never auto-settle).
  */
 export const ProjectSettingsOverrides = Schema.Struct({
+  branchNaming: Schema.optionalKey(Schema.NullOr(BranchNamingPolicy)),
   defaultModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
   defaultRuntimeMode: Schema.optionalKey(RuntimeMode),
   defaultThreadEnvMode: Schema.optionalKey(ThreadEnvMode),
@@ -1013,6 +1016,9 @@ export const ProjectSettingsOverrides = Schema.Struct({
 export type ProjectSettingsOverrides = typeof ProjectSettingsOverrides.Type;
 
 export const ServerSettings = Schema.Struct({
+  branchNaming: Schema.NullOr(BranchNamingPolicy).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   // How assistant text reaches clients during a turn. Deliberately a fresh
   // key (was `enableLegacyTokenStreaming`, before that
   // `enableAssistantStreaming`): decoding drops the old key, so everyone,
@@ -1352,6 +1358,7 @@ const OpenCodeSettingsPatch = Schema.Struct({
 });
 
 export const ServerSettingsPatch = Schema.Struct({
+  branchNaming: Schema.optionalKey(Schema.NullOr(BranchNamingPolicy)),
   // Server settings
   responseStreamingMode: Schema.optionalKey(ResponseStreamingMode),
   enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),

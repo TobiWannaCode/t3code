@@ -1,3 +1,4 @@
+import { BranchNamingReactor } from "./BranchNamingReactor.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -17,6 +18,7 @@ import * as AgentAwarenessRelay from "../../relay/AgentAwarenessRelay.ts";
 export const makeOrchestrationReactor = Effect.gen(function* () {
   const providerRuntimeIngestion = yield* ProviderRuntimeIngestionService;
   const providerCommandReactor = yield* ProviderCommandReactor;
+  const branchNamingReactor = yield* BranchNamingReactor;
   const checkpointReactor = yield* CheckpointReactor;
   const threadDeletionReactor = yield* ThreadDeletionReactor;
   const threadSettlementReactor = yield* ThreadSettlementReactor.ThreadSettlementReactor;
@@ -26,6 +28,7 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
 
   const start: OrchestrationReactorShape["start"] = Effect.fn("start")(function* () {
     yield* providerRuntimeIngestion.start();
+    yield* branchNamingReactor.start();
     yield* providerCommandReactor.start();
     yield* checkpointReactor.start();
     yield* threadDeletionReactor.start();

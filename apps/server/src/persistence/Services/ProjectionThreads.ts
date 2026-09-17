@@ -1,3 +1,4 @@
+import { BranchNamingOperation } from "@t3tools/contracts";
 /**
  * ProjectionThreadRepository - Projection repository interface for threads.
  *
@@ -31,6 +32,7 @@ export const ProjectionThread = Schema.Struct({
   projectId: ProjectId,
   title: Schema.String,
   titleState: Schema.optional(Schema.NullOr(ThreadTitleState)),
+  branchNaming: Schema.optional(Schema.NullOr(BranchNamingOperation)),
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,

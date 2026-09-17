@@ -1,3 +1,4 @@
+import { openBranchNaming } from "./BranchNamingDialog";
 import { requestCustomSnooze } from "./CustomSnoozeDialog";
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
 import { resolveThreadCurrentPullRequestLink } from "@t3tools/shared/threadPullRequests";
@@ -4125,6 +4126,9 @@ export default function Sidebar() {
             return;
           case "rename":
             startThreadRename(threadRef, thread.title);
+            return;
+          case "branch-naming":
+            openBranchNaming(threadRef);
             return;
           case "regenerate-title": {
             if (isRegeneratingTitle) return;

@@ -40,6 +40,24 @@ const makeEnvironment = (
   DesktopEnvironment.DesktopEnvironment.pipe(Effect.provide(makeEnvironmentLayer(overrides, env)));
 
 describe("DesktopEnvironment", () => {
+  it.effect("isolates packaged local builds even with an inherited Alpha home", () =>
+    Effect.gen(function* () {
+      const environment = yield* makeEnvironment(
+        { isLocalBuild: true, isPackaged: true },
+        {
+          T3CODE_HOME: "/Users/alice/.t3",
+          VITE_DEV_SERVER_URL: "http://localhost:5173",
+        },
+      );
+      assert.equal(environment.baseDir, "/Users/alice/.t3-local-current");
+      assert.equal(environment.stateDir, "/Users/alice/.t3-local-current/userdata");
+      assert.equal(environment.userDataDirName, "t3code-local-current");
+      assert.equal(environment.legacyUserDataDirName, "t3code-local-current");
+      assert.equal(environment.displayName, "T3 Code (Local)");
+      assert.equal(environment.appUserModelId, "com.t3tools.t3code.local");
+      assert.equal(environment.isDevelopment, false);
+    }),
+  );
   it.effect("derives state paths and development identity inside Effect", () =>
     Effect.gen(function* () {
       const environment = yield* makeEnvironment(
