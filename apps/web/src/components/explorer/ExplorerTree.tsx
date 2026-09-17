@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 import { Tooltip, TooltipTrigger, TooltipPopup, TooltipProvider } from "../ui/tooltip";
-import { MessageSquareIcon, ListTodoIcon, ArchiveIcon } from "lucide-react";
+import { MessageSquareIcon, ListTodoIcon, ArchiveIcon, ClockIcon } from "lucide-react";
 import { createPortal } from "react-dom";
 import { EXPLORER_DRAG_TYPE, decodeExplorerDrag, threadDropAssignment } from "./drag";
 import { useUiStateStore } from "../../uiStateStore";
@@ -35,12 +35,13 @@ import { orchestrationEnvironment } from "../../state/orchestration";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { randomUUID } from "../../lib/utils";
 import { readLocalApi } from "../../localApi";
+import { useExplorerRouteReveal } from "./useExplorerRouteReveal";
 import { flattenExplorer, folderKey, threadKey, type ExplorerNode } from "./model";
 import {
   openFolderDialog,
   openMoveChats,
-  revealChatFolder,
   toggleExplorerNode,
+  toggleFolderVisibility,
   useExplorerEnvironments,
   useExplorerUi,
 } from "./state";
@@ -52,50 +53,53 @@ export function useExplorerModel(
   enabled: boolean,
   threads: readonly EnvironmentThreadShell[],
   routeKey: string | null,
-  settled: ReadonlySet<string>,
-  snoozed: ReadonlySet<string>,
+  settledThreads: readonly EnvironmentThreadShell[],
+  snoozedThreads: readonly EnvironmentThreadShell[],
 ) {
   const environments = useExplorerEnvironments();
   const collapsed = useExplorerUi((state) => state.collapsed);
   const view = useExplorerUi((state) => state.view);
-  const lastRoute = useRef("");
+  const folderVisibility = useExplorerUi((state) => state.folderVisibility);
+  const allThreads = useMemo(
+    () => [...threads, ...settledThreads, ...snoozedThreads],
+    [threads, settledThreads, snoozedThreads],
+  );
+  const parked = useMemo(
+    () =>
+      new Map([
+        ...settledThreads.map((thread) => [threadKey(thread), "settled" as const] as const),
+        ...snoozedThreads.map((thread) => [threadKey(thread), "snoozed" as const] as const),
+      ]),
+    [settledThreads, snoozedThreads],
+  );
   const routeRef = routeKey ? parseScopedThreadKey(routeKey) : null;
   const routeFolder = environments
     .find((entry) => entry.id === routeRef?.environmentId)
     ?.organization.memberships.find((entry) => entry.threadId === routeRef?.threadId)?.folderId;
   const routeVisible = threads.some((thread) => threadKey(thread) === routeKey);
-  const lifecycle =
-    routeKey && settled.has(routeKey)
-      ? "settled"
-      : routeKey && snoozed.has(routeKey)
-        ? "activity"
-        : "chats";
-  useEffect(() => {
-    if (!enabled || !routeKey) return;
-    const key = `${routeKey}:${lifecycle}:${routeFolder ?? "unfiled"}`;
-    if (useExplorerUi.getState().revealFolderFor === routeKey) {
-      lastRoute.current = key;
-      return;
-    }
-    if (useExplorerUi.getState().revealFolderFor) useExplorerUi.setState({ revealFolderFor: null });
-    if (lifecycle === "chats" && !routeVisible) return;
-    if (lastRoute.current === key) return;
-    lastRoute.current = key;
-    const ref = parseScopedThreadKey(routeKey);
-    if (ref && lifecycle === "chats") revealChatFolder(ref);
-    else useExplorerUi.setState({ view: lifecycle, settledFilter: null });
-  }, [enabled, routeKey, lifecycle, routeFolder, routeVisible]);
+  useExplorerRouteReveal({ enabled, view, routeKey, routeFolder, routeVisible });
   const nodes = useMemo(
-    () => (enabled ? flattenExplorer(environments, threads, collapsed) : []),
-    [enabled, environments, threads, collapsed],
+    () =>
+      enabled ? flattenExplorer(environments, allThreads, collapsed, parked, folderVisibility) : [],
+    [enabled, environments, allThreads, collapsed, parked, folderVisibility],
   );
-  return { environments, collapsed, view, nodes, liveThreads: threads };
+  return {
+    environments,
+    collapsed,
+    view,
+    nodes,
+    liveThreads: threads,
+    allThreads,
+    parked,
+    folderVisibility,
+  };
 }
 export function ExplorerNavigation() {
   const view = useExplorerUi((state) => state.view);
   const entries = [
     { value: "chats", label: "Chats", icon: MessageSquareIcon },
     { value: "activity", label: "Activity", icon: ListTodoIcon },
+    { value: "snoozed", label: "Snoozed", icon: ClockIcon },
     { value: "settled", label: "Settled", icon: ArchiveIcon },
   ] as const;
   return (
@@ -287,11 +291,30 @@ export function ExplorerTree({
   };
   const menu = async (node: ExplorerNode, x: number, y: number) => {
     const env = environments.find((entry) => entry.id === node.environmentId);
-    if (!env?.writable) return;
+    if (!env) return;
     const selected = await readLocalApi()?.contextMenu.show(
       [
-        { id: "create", label: node.kind === "folder" ? "Create subfolder…" : "Create folder…" },
-        ...(node.kind === "folder"
+        ...(env.writable
+          ? [
+              {
+                id: "create",
+                label: node.kind === "folder" ? "Create subfolder…" : "Create folder…",
+              },
+            ]
+          : []),
+        ...(node.kind === "folder" || node.kind === "unfiled"
+          ? [
+              {
+                id: "toggle-settled",
+                label: `${model.folderVisibility[node.key]?.settled ? "Hide" : "Show"} settled`,
+              },
+              {
+                id: "toggle-snoozed",
+                label: `${model.folderVisibility[node.key]?.snoozed ? "Hide" : "Show"} snoozed`,
+              },
+            ]
+          : []),
+        ...(node.kind === "folder" && env.writable
           ? [
               { id: "new-chat", label: "New chat in folder…" },
               { id: "rename", label: "Rename folder…" },
@@ -304,6 +327,10 @@ export function ExplorerTree({
       { x, y },
     );
     if (!selected) return;
+    if (selected === "toggle-settled" || selected === "toggle-snoozed") {
+      toggleFolderVisibility(node.key, selected === "toggle-settled" ? "settled" : "snoozed");
+      return;
+    }
     if (selected === "create")
       openFolderDialog({
         kind: "create",
@@ -586,7 +613,7 @@ export function ExplorerTree({
                                 data.refs.map((ref) => ref.threadId),
                                 node,
                                 env.organization,
-                                model.liveThreads,
+                                model.allThreads,
                                 node.kind === "thread"
                                   ? event.clientY -
                                       event.currentTarget.getBoundingClientRect().top <
@@ -695,7 +722,7 @@ export function ExplorerTree({
                     )}
                     <button
                       type="button"
-                      disabled={!env?.writable}
+                      disabled={!env || (node.kind === "environment" && !env.writable)}
                       aria-label="Folder actions"
                       className="px-1"
                       onClick={(event) => void menu(node, event.clientX, event.clientY)}

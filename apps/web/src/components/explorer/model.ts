@@ -26,10 +26,17 @@ export const folderKey = (environmentId: EnvironmentId, folderId: ChatFolderId |
 export const threadKey = (thread: EnvironmentThreadShell) =>
   scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
 
+export type ExplorerParkedState = "settled" | "snoozed";
+export type ExplorerFolderVisibility = Readonly<
+  Record<string, Partial<Record<ExplorerParkedState, boolean>>>
+>;
+
 export function flattenExplorer(
   environments: readonly ExplorerEnvironment[],
   threads: readonly EnvironmentThreadShell[],
   collapsed: Readonly<Record<string, boolean>>,
+  parked: ReadonlyMap<string, ExplorerParkedState> = new Map(),
+  visibility: ExplorerFolderVisibility = {},
 ): ExplorerNode[] {
   const result: ExplorerNode[] = [];
   const threadsByEnvironment = new Map<EnvironmentId, EnvironmentThreadShell[]>();
@@ -90,6 +97,8 @@ export function flattenExplorer(
     )) {
       const assigned = memberships.get(thread.id);
       const folderId = assigned && folderIds.has(assigned) ? assigned : null;
+      const lifecycle = parked.get(threadKey(thread));
+      if (lifecycle && !visibility[folderKey(env.id, folderId)]?.[lifecycle]) continue;
       const entries = byFolder.get(folderId) ?? [];
       entries.push(thread);
       byFolder.set(folderId, entries);

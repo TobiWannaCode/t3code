@@ -88,9 +88,15 @@ with an explicit project and workspace choice. Removing a folder moves its chats
 and immediate subfolders to its parent; removing a root folder returns its chats
 to Unfiled. Conversations are retained.
 
-**Chats** shows active and pinned work. **Activity** retains the usual project and
-lifecycle controls, and **Settled** shows finished work. Snoozed, settled, and
-archived chats keep their folder membership. **Reveal folder** opens their folder
+**Chats** shows active and pinned work. **Activity** shows active work with the
+usual project and lifecycle controls. **Snoozed** lists paused chats by their next
+wake time, and **Settled** shows finished work. Settling, snoozing, and waking chats
+keep your current page and open conversation in place; use the left rail to switch
+pages. Snoozed, settled, and archived chats keep their folder membership.
+To see parked chats alongside active work, open a folder’s **…** menu and choose
+**Show settled** or **Show snoozed**. Choose **Hide settled** or **Hide snoozed**
+to hide them again. These choices are saved per folder on this device and also
+work in Unfiled; they do not wake or reopen chats. **Reveal folder** opens their folder
 without waking or reopening them. Use **View settled here** on a folder to narrow
 Settled to that subtree.
 

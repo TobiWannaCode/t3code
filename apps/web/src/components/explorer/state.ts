@@ -10,7 +10,12 @@ import { environmentCatalog } from "../../connection/catalog";
 import { environmentShell } from "../../state/shell";
 import { environmentServerConfigsAtom } from "../../state/server";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
-import { folderKey, type ExplorerEnvironment } from "./model";
+import {
+  folderKey,
+  type ExplorerEnvironment,
+  type ExplorerFolderVisibility,
+  type ExplorerParkedState,
+} from "./model";
 
 let previous: readonly ExplorerEnvironment[] = [];
 export const explorerEnvironmentsAtom = Atom.make((get) => {
@@ -46,11 +51,12 @@ export function supportsChatFolders(id: EnvironmentId) {
       .chatOrganization === true
   );
 }
-export type ExplorerView = "chats" | "activity" | "settled";
+export type ExplorerView = "chats" | "activity" | "snoozed" | "settled";
 export const useExplorerUi = create(
   persist<{
     view: ExplorerView;
     collapsed: Record<string, boolean>;
+    folderVisibility: ExplorerFolderVisibility;
     settledFilter: { environmentId: EnvironmentId; folderId: ChatFolderId } | null;
     revealKey: string | null;
     revealVersion: number;
@@ -61,6 +67,7 @@ export const useExplorerUi = create(
     () => ({
       view: "chats",
       collapsed: {},
+      folderVisibility: {},
       settledFilter: null,
       revealKey: null,
       revealVersion: 0,
@@ -83,6 +90,17 @@ export const useExplorerUi = create(
 export function toggleExplorerNode(key: string, collapsed?: boolean) {
   useExplorerUi.setState((state) => ({
     collapsed: { ...state.collapsed, [key]: collapsed ?? !state.collapsed[key] },
+  }));
+}
+export function toggleFolderVisibility(key: string, lifecycle: ExplorerParkedState) {
+  useExplorerUi.setState((state) => ({
+    folderVisibility: {
+      ...state.folderVisibility,
+      [key]: {
+        ...state.folderVisibility[key],
+        [lifecycle]: !state.folderVisibility[key]?.[lifecycle],
+      },
+    },
   }));
 }
 export function revealChatFolder(ref: ScopedThreadRef, folderOnly = false) {

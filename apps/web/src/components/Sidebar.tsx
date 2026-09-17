@@ -2795,40 +2795,42 @@ export default function Sidebar({ explorer = false }: { explorer?: boolean }) {
     explorer,
     explorerLiveThreads,
     routeThreadKey,
-    new Set(
-      allSettledThreads.map((thread) =>
-        scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-      ),
-    ),
-    new Set(
-      snoozedThreads.map((thread) =>
-        scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-      ),
-    ),
+    allSettledThreads,
+    snoozedThreads,
   );
-  const orderedThreads = useMemo(
-    () =>
-      explorer && explorerView === "chats"
-        ? explorerModel.nodes.flatMap((node) => (node.kind === "thread" ? [node.thread] : []))
-        : explorer && explorerView === "settled"
-          ? visibleSettledThreads
-          : [
-              ...pinnedThreads,
-              ...activeThreads,
-              ...visibleSnoozedThreads,
-              ...renderedSettledThreads,
-            ],
-    [
-      explorer,
-      explorerView,
-      explorerModel.nodes,
-      visibleSettledThreads,
-      pinnedThreads,
-      activeThreads,
-      visibleSnoozedThreads,
-      renderedSettledThreads,
-    ],
-  );
+  const orderedThreads = useMemo(() => {
+    if (explorer) {
+      switch (explorerView) {
+        case "chats":
+          return explorerModel.nodes.flatMap((node) =>
+            node.kind === "thread" ? [node.thread] : [],
+          );
+        case "snoozed":
+          return snoozedThreads;
+        case "settled":
+          return visibleSettledThreads;
+        case "activity":
+          return explorerLiveThreads;
+      }
+    }
+    return [
+      ...pinnedThreads,
+      ...activeThreads,
+      ...visibleSnoozedThreads,
+      ...renderedSettledThreads,
+    ];
+  }, [
+    explorer,
+    explorerView,
+    explorerModel.nodes,
+    explorerLiveThreads,
+    snoozedThreads,
+    visibleSettledThreads,
+    pinnedThreads,
+    activeThreads,
+    visibleSnoozedThreads,
+    renderedSettledThreads,
+  ]);
   const orderedThreadKeys = useMemo(
     () =>
       orderedThreads.map((thread) =>
@@ -2864,11 +2866,11 @@ export default function Sidebar({ explorer = false }: { explorer?: boolean }) {
   const settledThreadKeys = useMemo(
     () =>
       new Set(
-        settledThreads.map((thread) =>
+        allSettledThreads.map((thread) =>
           scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
         ),
       ),
-    [settledThreads],
+    [allSettledThreads],
   );
   const settledThreadKeysRef = useRef(settledThreadKeys);
   settledThreadKeysRef.current = settledThreadKeys;
@@ -3086,14 +3088,15 @@ export default function Sidebar({ explorer = false }: { explorer?: boolean }) {
   // A settle per thread at a time: double clicks and repeated menu picks
   // must not dispatch a second settle that fails and toasts a false error.
   const settlingThreadKeysRef = useRef(new Set<string>());
-  // Parking the thread you're looking at (settle or snooze) moves you
+  // In the Existing sidebar, parking the thread (settle or snooze) moves you
   // forward: the next remaining card (never a settled or snoozed row, never
   // one leaving in the same batch), or a fresh draft in this project when it
   // was the last active one. Callers snapshot the plan BEFORE the command
   // mutates the partition; background parks never navigate (null plan).
   const planForwardNavigation = useCallback(
     (threadKey: string, coParkingKeys?: ReadonlySet<string>): (() => void) | null => {
-      if (routeThreadKeyRef.current !== threadKey) return null;
+      // Explorer pages and the open conversation only change through navigation.
+      if (explorer || routeThreadKeyRef.current !== threadKey) return null;
       const shell = threadByKeyRef.current.get(threadKey);
       const orderedKeys = orderedThreadKeysRef.current;
       const settledKeys = settledThreadKeysRef.current;
@@ -3113,7 +3116,7 @@ export default function Sidebar({ explorer = false }: { explorer?: boolean }) {
               void handleNewThreadRef.current(scopeProjectRef(shell.environmentId, shell.projectId))
           : () => void router.navigate({ to: "/" });
     },
-    [navigateToThread, router],
+    [explorer, navigateToThread, router],
   );
 
   const attemptSettle = useCallback(
@@ -3433,6 +3436,8 @@ export default function Sidebar({ explorer = false }: { explorer?: boolean }) {
     const activeRows = rowsOf(activeThreads, "active");
     items.push({ kind: "marker", marker: "active-placeholder" });
     items.push(...activeRows);
+    // Explorer keeps parked chats on their own pages, never in Activity shelves.
+    if (explorer) return pinnedThreads.length + activeThreads.length > 0 ? items : [];
     if (snoozedThreads.length > 0) {
       items.push({ kind: "marker", marker: "snoozed-header" });
       items.push(...rowsOf(visibleSnoozedThreads, "snoozed"));
@@ -3443,6 +3448,7 @@ export default function Sidebar({ explorer = false }: { explorer?: boolean }) {
     items.push(...settledRows);
     return items;
   }, [
+    explorer,
     activeThreads,
     pinnedThreads,
     renderedSettledThreads,
@@ -4891,16 +4897,30 @@ export default function Sidebar({ explorer = false }: { explorer?: boolean }) {
                                 renderThread={(thread) =>
                                   renderThreadRowInner(
                                     thread,
-                                    thread.pinnedAt ? "pinned" : "active",
+                                    explorerModel.parked.get(
+                                      scopedThreadKey(
+                                        scopeThreadRef(thread.environmentId, thread.id),
+                                      ),
+                                    ) ?? (thread.pinnedAt ? "pinned" : "active"),
                                   )
                                 }
                               />
                             </>
                           );
-                        if (explorer && explorerView === "settled")
-                          return visibleSettledThreads.map((thread) =>
-                            renderThreadRowInner(thread, "settled"),
+                        if (
+                          explorer &&
+                          (explorerView === "settled" || explorerView === "snoozed")
+                        ) {
+                          const pageThreads =
+                            explorerView === "snoozed" ? snoozedThreads : visibleSettledThreads;
+                          return pageThreads.length > 0 ? (
+                            pageThreads.map((thread) => renderThreadRowInner(thread, explorerView))
+                          ) : (
+                            <li className="list-none px-2 py-6 text-center text-xs text-muted-foreground">
+                              No {explorerView} chats
+                            </li>
                           );
+                        }
                         const from = dragState?.activeSection ?? null;
                         const items: ReactNode[] = [
                           <SidebarDraftBlock
@@ -5018,8 +5038,7 @@ export default function Sidebar({ explorer = false }: { explorer?: boolean }) {
                         }
                         return items;
                       })()}
-                      {(settledShelfExpanded || (explorer && explorerView === "settled")) &&
-                      !(explorer && explorerView === "chats") &&
+                      {(explorer ? explorerView === "settled" : settledShelfExpanded) &&
                       hiddenSettledCount > 0 ? (
                         <li className="list-none">
                           <button
@@ -5038,6 +5057,7 @@ export default function Sidebar({ explorer = false }: { explorer?: boolean }) {
               </TooltipProvider>
             ) : null}
             {!isSearchingThreads &&
+            !(explorer && (explorerView === "snoozed" || explorerView === "settled")) &&
             visibleDraftSessionCount === 0 &&
             pinnedThreads.length +
               activeThreads.length +

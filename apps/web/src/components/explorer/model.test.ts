@@ -9,7 +9,7 @@ import {
   type ChatOrganization,
 } from "@t3tools/contracts";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
-import { flattenExplorer, folderKey } from "./model";
+import { flattenExplorer, folderKey, threadKey, type ExplorerFolderVisibility } from "./model";
 const env = EnvironmentId.make("local");
 const remote = EnvironmentId.make("remote");
 const folder = (id: string, parentId: string | null, position = 0) => ({
@@ -44,6 +44,54 @@ const thread = (id: string, environmentId = env): EnvironmentThreadShell => ({
   hasActionableProposedPlan: false,
 });
 describe("explorer visible traversal", () => {
+  it("shows parked chats only in folders with that lifecycle enabled", () => {
+    const active = thread("active");
+    const settled = thread("settled");
+    const snoozed = thread("snoozed");
+    const nested = thread("nested");
+    const unfiled = thread("unfiled");
+    const other = thread("settled", remote);
+    const chats = [active, settled, snoozed, nested, unfiled, other];
+    const organization: ChatOrganization = {
+      revision: 0,
+      folders: [folder("group", null), folder("child", "group")],
+      memberships: [active, settled, snoozed, nested].map((chat) => ({
+        threadId: chat.id,
+        folderId: ChatFolderId.make(chat === nested ? "child" : "group"),
+      })),
+    };
+    const environments = [env, remote].map((id) => ({ id, organization, writable: false }));
+    const parked = new Map([
+      [threadKey(settled), "settled" as const],
+      [threadKey(snoozed), "snoozed" as const],
+      [threadKey(nested), "settled" as const],
+      [threadKey(unfiled), "snoozed" as const],
+      [threadKey(other), "settled" as const],
+    ]);
+    const groupKey = folderKey(env, ChatFolderId.make("group"));
+    const visible = (visibility: ExplorerFolderVisibility = {}, collapsed = {}) =>
+      flattenExplorer(environments, chats, collapsed, parked, visibility).flatMap((row) =>
+        row.kind === "thread" ? [row.key] : [],
+      );
+    expect(visible()).toEqual(["local:active"]);
+    expect(visible({ [groupKey]: { settled: true } })).toEqual(["local:active", "local:settled"]);
+    expect(visible({ [groupKey]: { snoozed: true } })).toEqual(["local:active", "local:snoozed"]);
+    const both = { [groupKey]: { settled: true, snoozed: true } };
+    expect(visible(both)).toEqual(["local:active", "local:settled", "local:snoozed"]);
+    expect(visible(both, { [groupKey]: true })).toEqual([]);
+    expect(visible({ [folderKey(env, null)]: { snoozed: true } })).toEqual([
+      "local:active",
+      "local:unfiled",
+    ]);
+    // Clearing snooze restores normal visibility without changing membership.
+    parked.delete(threadKey(snoozed));
+    expect(visible()).toEqual(["local:active", "local:snoozed"]);
+    expect(
+      organization.memberships.find((member) => member.threadId === snoozed.id)?.folderId,
+    ).toBe("group");
+    // Hidden rows do not become keyboard or range-selection targets.
+    expect(visible({ [groupKey]: { settled: false } })).not.toContain("local:settled");
+  });
   it("keeps scoped identities and excludes collapsed descendants from keyboard/range order", () => {
     const organization: ChatOrganization = {
       revision: 1,
