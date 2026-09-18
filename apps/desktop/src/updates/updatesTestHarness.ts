@@ -20,6 +20,8 @@ import * as DesktopUpdates from "./DesktopUpdates.ts";
 export const flushCallbacks = Effect.yieldNow;
 
 export interface UpdatesHarnessOptions {
+  readonly platform?: NodeJS.Platform;
+  readonly isLocalBuild?: boolean;
   readonly checkForUpdates?: Effect.Effect<
     void,
     ElectronUpdater.ElectronUpdaterCheckForUpdatesError
@@ -145,7 +147,8 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
   const environmentLayer = DesktopEnvironment.layer({
     dirname: "/repo/apps/desktop/src",
     homeDirectory: `/tmp/t3-desktop-updates-home-${process.pid}`,
-    platform: "darwin",
+    platform: options.platform ?? "darwin",
+    isLocalBuild: options.isLocalBuild ?? false,
     processArch: "x64",
     appVersion: "1.2.3",
     appPath: "/repo",

@@ -336,8 +336,8 @@ export const make = Effect.gen(function* () {
   );
 
   const resolveDisabledReason = Effect.gen(function* () {
-    if (environment.branding.stageLabel === "Local")
-      return Option.some("Updated locally with vp run install:desktop:local.");
+    if (environment.branding.stageLabel === "Local" && environment.platform !== "linux")
+      return Option.some("Updated locally with bun run install:desktop:local.");
     const hasFeedConfig = yield* hasUpdateFeedConfig;
     return Option.fromNullishOr(
       getAutoUpdateDisabledReason({

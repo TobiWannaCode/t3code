@@ -76,6 +76,18 @@ Use Node 24.13.1 or newer compatible Node 24, install dependencies with the repo
 bun run install:desktop:local
 ```
 
-This builds current sources, verifies the packaged app, replaces **T3 Code (Local)**, and launches it. It closes the previous Local app only after the build passes its packaging checks. The local app does not download upstream updates; rerun the command after changing code.
+This builds current sources, verifies the packaged app, replaces **T3 Code (Local)**, and launches it. It closes the previous Local app only after the build passes its packaging checks. The macOS Local app stays on manual updates; rerun the command after changing code. Linux Local AppImage releases check `TobiWannaCode/t3code` on GitHub for updates and keep the same isolated Local data folders. The earlier Linux preview had updates disabled and needs one manual replacement with an update-enabled AppImage. Run the AppImage itself for automatic updates; an extracted copy does not update automatically.
 
 This migration is based on upstream v0.0.42 at `f17165a76b1a782831eb6a05a4383b27283df15d`. Its server data lives in `~/.t3-local-current` and its Electron profile is `~/Library/Application Support/t3code-local-current`. Alpha's app and `~/.t3/userdata` are separate. Old Local data in `~/.t3-local` is unused. Migration `053_BranchNaming` stores durable rename operations; do not point the April v0.0.15 build at this new database.
+
+### Linux fork releases
+
+Build on Linux with the same Node/pnpm tooling, Rust, and native build dependencies:
+
+```sh
+bun run dist:desktop:artifact --platform linux --target AppImage --arch x64 --local-test --build-version 0.0.43 --output-dir release
+```
+
+Use a higher version for each release. Upload the AppImage and generated `latest-linux.yml` together to a published, non-prerelease GitHub release in `TobiWannaCode/t3code`, and mark it as latest. Use a `fork-linux-` tag prefix to avoid triggering the upstream multi-platform release workflow. Keep the metadata filename and asset filenames unchanged. The Local Linux feed is pinned to this fork even when the build environment names another repository.
+
+The update button checks the release metadata, downloads the new AppImage, and applies it on restart. Source commits alone do not ship updates. The original `0.0.42-local.20260917` preview requires one manual install of a newer release before this works.

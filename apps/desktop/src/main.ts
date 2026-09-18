@@ -83,7 +83,6 @@ const isLocalBuild =
   );
 if (isLocalBuild) {
   process.env.T3CODE_HOME = NodePath.join(NodeOS.homedir(), LOCAL_DESKTOP_BUILD.homeDirName);
-  process.env.T3CODE_DISABLE_AUTO_UPDATE = "true";
   delete process.env.VITE_DEV_SERVER_URL;
 }
 

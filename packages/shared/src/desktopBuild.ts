@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 
 export const LOCAL_DESKTOP_BUILD = {
   channel: "local",
+  updateRepository: "TobiWannaCode/t3code",
   productName: "T3 Code (Local)",
   appId: "com.t3tools.t3code.local",
   homeDirName: ".t3-local-current",

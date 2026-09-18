@@ -85,6 +85,33 @@ describe("DesktopUpdates", () => {
     }).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
 
+  it.effect("enables Local Linux AppImage updates without enabling Local macOS updates", () =>
+    Effect.gen(function* () {
+      for (const platform of ["linux", "darwin"] as const) {
+        const harness = makeHarness({
+          platform,
+          isLocalBuild: true,
+          env: { APPIMAGE: platform === "linux" ? "/apps/T3.AppImage" : undefined },
+        });
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const updates = yield* DesktopUpdates.DesktopUpdates;
+            yield* updates.configure;
+            const state = yield* updates.getState;
+            assert.equal(state.enabled, platform === "linux");
+            if (platform === "linux") {
+              yield* updates.check("manual");
+              assert.equal(harness.checkCount(), 1);
+            } else {
+              assert.equal(state.status, "disabled");
+              assert.equal(harness.checkCount(), 0);
+            }
+          }),
+        ).pipe(Effect.provide(harness.layer));
+      }
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
   it.effect("subscribe delivers the latest state plus subsequent changes", () => {
     const harness = makeHarness();
 

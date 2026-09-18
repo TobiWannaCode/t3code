@@ -2541,12 +2541,14 @@ export function resolveDesktopRuntimeDependencies(
 
 export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig")(function* (
   updateChannel: "latest" | "nightly",
+  repository?: string,
 ) {
   const env = yield* Config.all({
     updateRepository: Config.string("T3CODE_DESKTOP_UPDATE_REPOSITORY").pipe(Config.option),
     githubRepository: Config.string("GITHUB_REPOSITORY").pipe(Config.option),
   });
   const rawRepo = (
+    repository ||
     Option.getOrUndefined(env.updateRepository)?.trim() ||
     Option.getOrUndefined(env.githubRepository)?.trim() ||
     ""
@@ -2674,8 +2676,14 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     ],
   };
   const updateChannel = resolveDesktopUpdateChannel(version);
-  if (!localTest && !isDesktopPreviewVersion(version)) {
-    const publishConfig = yield* resolveGitHubPublishConfig(updateChannel);
+  // Local releases currently publish Linux AppImages only. Keep macOS and
+  // Windows Local builds isolated from release updates.
+  const supportsUpdateFeed = !localTest || platform === "linux";
+  if (supportsUpdateFeed && !isDesktopPreviewVersion(version)) {
+    const publishConfig = yield* resolveGitHubPublishConfig(
+      updateChannel,
+      localTest ? LOCAL_DESKTOP_BUILD.updateRepository : undefined,
+    );
     if (publishConfig) {
       buildConfig.publish = [publishConfig];
     } else if (mockUpdates) {

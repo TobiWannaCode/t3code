@@ -368,6 +368,65 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     ),
   );
 
+  it.effect(
+    "routes Local Linux releases to the fork while keeping other Local builds offline",
+    () =>
+      Effect.gen(function* () {
+        for (const platform of ["linux", "mac", "win"] as const) {
+          const config = yield* createBuildConfig(
+            platform,
+            "dir",
+            "0.0.43",
+            false,
+            false,
+            undefined,
+            undefined,
+            false,
+            "x64",
+            true,
+          );
+          assert.equal(config.appId, "com.t3tools.t3code.local");
+          assert.equal(config.productName, "T3 Code (Local)");
+          if (platform === "linux") {
+            assert.deepStrictEqual(config.publish, [
+              {
+                provider: "github",
+                owner: "TobiWannaCode",
+                repo: "t3code",
+                releaseType: "release",
+              },
+            ]);
+          } else {
+            assert.notProperty(config, "publish");
+          }
+        }
+        const preview = yield* createBuildConfig(
+          "linux",
+          "AppImage",
+          "0.0.43-preview.20260917.1",
+          false,
+          false,
+          undefined,
+          undefined,
+          false,
+          "x64",
+          true,
+        );
+        assert.notProperty(preview, "publish");
+      }).pipe(
+        Effect.provide(
+          ConfigProvider.layer(
+            ConfigProvider.fromEnv({
+              env: {
+                GITHUB_REPOSITORY: "pingdotgg/t3code",
+                T3CODE_DESKTOP_UPDATE_REPOSITORY: "pingdotgg/t3code",
+              },
+            }),
+          ),
+        ),
+      ),
+  );
+
   it("stages only the desktop main-process externals", () => {
     assert.deepStrictEqual(
       resolveDesktopRuntimeDependencies(
