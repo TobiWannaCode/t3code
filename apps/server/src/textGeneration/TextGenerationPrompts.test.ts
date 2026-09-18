@@ -1,3 +1,4 @@
+import { sanitizeCommitSubject } from "./TextGenerationUtils.ts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -335,13 +336,73 @@ it("keeps recent branch context and requires rule selection without changing lit
   const { prompt, outputSchema } = buildBranchNamePrompt({
     message: `Initial task\n${"intermediate context ".repeat(700)}\nLatest constraint: add regression tests`,
     branchNamingPolicy: {
+      description: "Choose the best task type.",
+      slugPattern: "^[a-z-]+$",
       rules: [{ id: "test", template: "Team/{AI_MESSAGE}-WIP", description: "Regression tests" }],
       fallbackRuleId: null,
     },
   });
   expect(prompt).toContain("Latest constraint: add regression tests");
   expect(prompt).toContain("Team/{AI_MESSAGE}-WIP");
+  expect(prompt).toContain("Choose the best task type.");
+  expect(prompt).toContain("^[a-z-]+$");
   expect(toJsonSchemaObject(outputSchema)).toMatchObject({
     required: ["branch", "ruleId", "slug"],
   });
+});
+
+it("includes file examples and section requirements without conflicting default limits or headings", () => {
+  const commitConventions = {
+    description: "Describe the result",
+    template: "{type}({scope}): {subject}",
+    types: { fix: "Bug fixes" },
+    scopes: ["web"],
+    subjectMaxLength: 100,
+    examples: ["fix(web): preserve draft"],
+  };
+  const policy = {
+    kind: "repo_conventions" as const,
+    inferRepositoryConventions: false,
+    commitConventions,
+    pullRequestConventions: {
+      description: "Explain the final change",
+      titleTemplate: commitConventions.template,
+      requiredSections: { Summary: "Problem and result", Validation: "Checks and gaps" },
+    },
+  };
+  const commit = buildCommitMessagePrompt({
+    branch: "fix/draft",
+    stagedSummary: "M draft.ts",
+    stagedPatch: "diff",
+    policy,
+  });
+  expect(commit.prompt).toContain("fix(web): preserve draft");
+  expect(commit.prompt).toContain("limited to 100 characters");
+  expect(commit.prompt).not.toContain("<= 72 chars");
+  const pr = buildPrContentPrompt({
+    baseBranch: "main",
+    headBranch: "fix/draft",
+    commitSummary: "Fix draft",
+    diffSummary: "draft.ts",
+    diffPatch: "diff",
+    changeRequestTemplate: "## Checklist\n- [ ] Review",
+    policy,
+  });
+  expect(pr.prompt).toContain("Validation");
+  expect(pr.prompt).toContain("Checks and gaps");
+  expect(pr.prompt).toContain("## Checklist");
+  expect(pr.prompt).not.toContain("include headings '## Summary' and '## Testing'");
+});
+
+it("preserves convention-formatted commit titles for validation rather than silently shortening them", () => {
+  const raw = `fix(web): ${"a".repeat(72)}`;
+  const rules = {
+    description: "Fixes",
+    template: "{type}({scope}): {subject}",
+    types: { fix: "Bug fixes" },
+    scopes: ["web"],
+    subjectMaxLength: 72,
+  };
+  expect(sanitizeCommitSubject(raw, rules)).toBe(raw);
+  expect(sanitizeCommitSubject(raw)).toHaveLength(72);
 });

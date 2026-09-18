@@ -1,10 +1,64 @@
-# Branch naming in the Local build
+# Repository conventions in the Local build
 
-Open **Settings → Source control → Branch naming rules**. Use the settings scope selector to choose environment defaults or project overrides. The row's inheritance control resets a project to its environment defaults.
+Add `.conventions.json` to the Git repository root to share branch, commit, and pull request conventions with the project:
+
+```json
+{
+  "version": 1,
+  "branches": {
+    "description": "Choose the type that best matches the task and a short, descriptive slug. Use lowercase words separated by hyphens.",
+    "template": "{type}/{slug}",
+    "types": { "feat": "New functionality", "fix": "Bug fixes", "chore": "Maintenance" },
+    "slugPattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+    "examples": ["feat/add-login", "fix/header-overflow", "chore/update-dependencies"]
+  },
+  "commits": {
+    "description": "Describe the resulting change in the imperative mood. Choose the most specific scope that covers the change.",
+    "template": "{type}({scope}): {subject}",
+    "types": {
+      "feat": "New functionality",
+      "fix": "Bug fixes",
+      "docs": "Documentation",
+      "refactor": "Code restructuring without changing behavior",
+      "test": "Test additions or corrections",
+      "chore": "Maintenance"
+    },
+    "scopes": ["web", "server", "desktop", "mobile", "shared"],
+    "subjectMaxLength": 72,
+    "examples": ["fix(mobile): preserve draft when reconnecting"]
+  },
+  "pullRequests": {
+    "description": "Describe the final change so a reviewer can understand it without reading the conversation. Explain the problem, resulting behavior, and verification.",
+    "titleTemplate": "{type}({scope}): {subject}",
+    "requiredSections": {
+      "Summary": "Explain the problem and what changes.",
+      "Validation": "Describe checks and their results. State verification gaps."
+    },
+    "examples": ["feat(web): add project search"]
+  }
+}
+```
+
+Each repository section takes priority over its corresponding T3 Code settings. All sections are optional; omitted sections retain their existing fallback behavior. Detection uses the current Git worktree root, including when the chat starts in a subdirectory. Commit the file to make it available in new worktrees. Changes take effect on the next naming request; pending names are rejected if the effective rules change before renaming.
+
+Version 1 requires a description, a template with exactly one `{type}` and one `{slug}`, 1–50 types, and a JavaScript regular expression for `slugPattern`. Types use lowercase letters, digits, and hyphens, starting with a letter. The generated slug is normalized to lowercase ASCII kebab-case and must match the pattern, including any collision suffix. Invalid files, unsupported versions, or nonmatching names leave the branch unchanged and report an error. The file must fit within 64 KiB. Unknown top-level sections are ignored.
+
+Commit templates use `{type}` and `{subject}`, with an optional `{scope}` token. Including `{scope}` requires a value from `scopes`; omit the token to allow unscoped titles. `subjectMaxLength` limits only the descriptive `{subject}` fragment, excluding fixed template text and the type/scope. Pull request title types, scopes, and subject limits reuse the commit rules; PR titles using `{type}` or `{scope}` require those commit definitions. Required PR sections must be Markdown headings with content. Existing repository PR templates remain available, and convention-required sections take priority.
+
+Examples guide the model. T3 validates generated titles and required sections before creating commits or PRs; invalid generated content reports an error rather than silently truncating or publishing it. Explicitly supplied commit messages remain under your control. These rules apply across the source-control writer providers. They do not enforce conventions on external Git commands.
+
+To share the rules with coding agents, add this to `AGENTS.md`:
+
+```md
+Read .conventions.json before naming branches, writing commit messages,
+or preparing pull requests. Follow its applicable conventions.
+```
+
+Open **Settings → Conventions** for repository guidance, branch format fallbacks, commit/PR writing style, PR template behavior, and the writer model. If the file or a section is absent, existing settings apply. Use the settings scope selector to choose environment defaults or project overrides. The row's inheritance control resets a project to its environment defaults.
 
 Formats such as `bug/{AI_MESSAGE}`, `test/etl/banana/{AI_MESSAGE}`, and `Team/{AI_MESSAGE}-WIP` contain exactly one case-sensitive token. Fixed text is preserved. The model selects a rule using its description, with earlier rules winning ties, and supplies a lowercase ASCII kebab-case description. A fallback rule is optional; an unmatched request without a fallback leaves the branch unchanged.
 
-Use **Save** to persist the complete policy. Failed saves preserve the draft. Disabling custom formats restores the existing conventions for the selected scope. Formats are limited to 200 UTF-8 bytes, descriptions to 1,000 characters, and policies to 50 rules. Generated fragments are limited to 64 characters and complete names to 240 bytes. Collision suffixes go inside the token: `Team/fix-import-1-WIP`.
+Use **Save** to persist the complete policy. Failed saves preserve the draft. Disabling custom formats restores the existing conventions for the selected scope when no repository branch rules are present. Formats are limited to 200 UTF-8 bytes, descriptions to 1,000 characters, and policies to 50 rules. Generated fragments are limited to 64 characters and complete names to 240 bytes. Collision suffixes go inside the token: `Team/fix-import-1-WIP`.
 
 New worktrees retain their provisional name while the first turn runs. The generated name applies when the workspace is idle. From the thread's sidebar context menu or chat header menu, open **Branch naming…**, then **Regenerate branch name** to use the original request and recent conversation. Git actions that create an AI-named branch use the same effective policy, including when you supply a commit message.
 

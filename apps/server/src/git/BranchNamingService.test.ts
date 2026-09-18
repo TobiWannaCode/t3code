@@ -1,4 +1,7 @@
 import { assert, it } from "@effect/vitest";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { ChildProcessSpawner } from "effect/unstable/process";
+import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
 import { Effect, Layer } from "effect";
 import { DEFAULT_SERVER_SETTINGS, ProjectId } from "@t3tools/contracts";
 import { BranchNamingService, layer } from "./BranchNamingService.ts";
@@ -70,6 +73,19 @@ it.effect(
         Effect.provide(
           layer.pipe(
             Layer.provide(settingsLayer),
+            Layer.provide(NodeServices.layer),
+            Layer.provide(
+              Layer.mock(GitVcsDriver)({
+                execute: () =>
+                  Effect.succeed({
+                    exitCode: ChildProcessSpawner.ExitCode(0),
+                    stdout: "/missing-branch-naming-test-repo",
+                    stderr: "",
+                    stdoutTruncated: false,
+                    stderrTruncated: false,
+                  }),
+              }),
+            ),
             Layer.provide(Layer.mock(ProviderRegistry)({})),
             Layer.provide(
               Layer.mock(TextGeneration)({

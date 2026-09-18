@@ -3017,6 +3017,272 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
     }),
   );
 
+  it.effect(
+    "uses commit conventions over custom settings without truncating the subject fragment",
+    () =>
+      Effect.gen(function* () {
+        const repoDir = yield* makeTempDir("t3-commit-conventions-");
+        yield* initRepo(repoDir);
+        const commits = {
+          description: "Describe the result",
+          template: "{type}({scope}): {subject}",
+          types: { fix: "Bug fixes" },
+          scopes: ["web"],
+          subjectMaxLength: 72,
+          examples: ["fix(web): preserve draft"],
+        };
+        NodeFS.writeFileSync(
+          NodePath.join(repoDir, ".conventions.json"),
+          encodeCliJson({ version: 1, commits }),
+        );
+        const subject = `fix(web): ${"a".repeat(72)}`;
+        const { manager } = yield* makeManager({
+          serverSettings: {
+            sourceControlWritingStyle: {
+              mode: "custom",
+              customInstructions: "Always use OLD: as a prefix",
+            },
+          },
+          textGeneration: {
+            generateCommitMessage: (input) => {
+              expect(input.policy?.commitConventions).toEqual(commits);
+              expect(input.policy?.commitInstructions).toBeUndefined();
+              return Effect.succeed({ subject, body: "" });
+            },
+          },
+        });
+        yield* runStackedAction(manager, { cwd: repoDir, action: "commit" });
+        expect((yield* runGit(repoDir, ["log", "-1", "--pretty=%s"])).stdout.trim()).toBe(subject);
+      }),
+  );
+
+  it.effect("rejects invalid generated commit types before creating a commit", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3-commit-conventions-");
+      yield* initRepo(repoDir);
+      const originalHead = (yield* runGit(repoDir, ["rev-parse", "HEAD"])).stdout;
+      NodeFS.writeFileSync(
+        NodePath.join(repoDir, ".conventions.json"),
+        encodeCliJson({
+          version: 1,
+          commits: {
+            description: "Fixes",
+            template: "{type}: {subject}",
+            types: { fix: "Bug fixes" },
+            subjectMaxLength: 72,
+          },
+        }),
+      );
+      const { manager } = yield* makeManager({
+        textGeneration: {
+          generateCommitMessage: () => Effect.succeed({ subject: "feat: wrong type", body: "" }),
+        },
+      });
+      const error = yield* runStackedAction(manager, { cwd: repoDir, action: "commit" }).pipe(
+        Effect.flip,
+      );
+      expect(error.message).toContain("type not listed");
+      expect((yield* runGit(repoDir, ["rev-parse", "HEAD"])).stdout).toBe(originalHead);
+    }),
+  );
+
+  it.effect(
+    "uses PR conventions and prevents publication until required sections are present",
+    () =>
+      Effect.gen(function* () {
+        const repoDir = yield* makeTempDir("t3-pr-conventions-");
+        yield* initRepo(repoDir);
+        yield* runGit(repoDir, ["checkout", "-b", "feature/conventions"]);
+        const remoteDir = yield* createBareRemote();
+        yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+        const commits = {
+          description: "Fixes",
+          template: "{type}({scope}): {subject}",
+          types: { fix: "Bug fixes" },
+          scopes: ["web"],
+          subjectMaxLength: 72,
+        };
+        const pullRequests = {
+          description: "Explain the final change",
+          titleTemplate: commits.template,
+          requiredSections: { Summary: "What changed", Validation: "Checks and results" },
+          examples: ["fix(web): preserve draft"],
+        };
+        NodeFS.writeFileSync(
+          NodePath.join(repoDir, ".conventions.json"),
+          encodeCliJson({ version: 1, commits, pullRequests }),
+        );
+        yield* runGit(repoDir, ["add", ".conventions.json"]);
+        yield* runGit(repoDir, ["commit", "-m", "Add conventions"]);
+        let valid = false;
+        const { manager, ghCalls } = yield* makeManager({
+          ghScenario: { prListSequence: ["[]", "[]", "[]"] },
+          textGeneration: {
+            generatePrContent: (input) => {
+              expect(input.policy?.pullRequestConventions).toEqual(pullRequests);
+              expect(input.policy?.commitConventions).toEqual(commits);
+              expect(input.policy?.changeRequestInstructions).toBeUndefined();
+              return Effect.succeed({
+                title: "fix(web): preserve draft",
+                body:
+                  "## Summary\nPreserve draft.\n" +
+                  (valid ? "## Validation\nTests passed." : "## Testing\nTests passed."),
+              });
+            },
+          },
+        });
+        const error = yield* runStackedAction(manager, { cwd: repoDir, action: "create_pr" }).pipe(
+          Effect.flip,
+        );
+        expect(error.message).toContain('"Validation" section');
+        expect(ghCalls.some((call) => call.includes("pr create"))).toBe(false);
+        valid = true;
+        const result = yield* runStackedAction(manager, { cwd: repoDir, action: "create_pr" });
+        expect(result.pr.status).toBe("created");
+        expect(ghCalls.some((call) => call.includes("pr create"))).toBe(true);
+      }),
+  );
+
+  it.effect(
+    "uses repository conventions for feature branches with an explicit commit message",
+    () =>
+      Effect.gen(function* () {
+        const repoDir = yield* makeTempDir("t3code-conventions-manager-");
+        yield* initRepo(repoDir);
+        NodeFS.writeFileSync(
+          NodePath.join(repoDir, ".conventions.json"),
+          encodeCliJson({
+            version: 1,
+            branches: {
+              description: "Choose a task type",
+              template: "{type}/{slug}",
+              types: { fix: "Bug fixes", feat: "New functionality" },
+              slugPattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            },
+          }),
+        );
+        yield* runGit(repoDir, ["branch", "fix/header-overflow"]);
+        NodeFS.writeFileSync(NodePath.join(repoDir, "README.md"), "changed\n");
+        const { manager } = yield* makeManager({
+          serverSettings: {
+            branchNaming: {
+              rules: [{ id: "fallback", template: "fallback/{AI_MESSAGE}", description: "All" }],
+              fallbackRuleId: null,
+            },
+          },
+          textGeneration: {
+            generateBranchName: (input) => {
+              expect(input.message).toBe("Fix header overflow");
+              expect(input.branchNamingPolicy?.rules.map((rule) => rule.id)).toEqual([
+                "fix",
+                "feat",
+              ]);
+              return Effect.succeed({
+                branch: "header-overflow",
+                slug: "Header overflow",
+                ruleId: "fix",
+              });
+            },
+          },
+        });
+        const result = yield* runStackedAction(manager, {
+          cwd: repoDir,
+          action: "commit",
+          featureBranch: true,
+          commitMessage: "Fix header overflow",
+        });
+        expect(result.branch.name).toBe("fix/header-overflow-1");
+        expect((yield* runGit(repoDir, ["branch", "--show-current"])).stdout.trim()).toBe(
+          "fix/header-overflow-1",
+        );
+      }),
+  );
+
+  it.effect(
+    "does not create or switch branches when a collision violates the repository slug pattern",
+    () =>
+      Effect.gen(function* () {
+        const repoDir = yield* makeTempDir("t3code-conventions-manager-");
+        yield* initRepo(repoDir);
+        NodeFS.writeFileSync(
+          NodePath.join(repoDir, ".conventions.json"),
+          encodeCliJson({
+            version: 1,
+            branches: {
+              description: "Fixes",
+              template: "{type}/{slug}",
+              types: { fix: "Bug fixes" },
+              slugPattern: "^header-overflow$",
+            },
+          }),
+        );
+        yield* runGit(repoDir, ["branch", "fix/header-overflow"]);
+        NodeFS.writeFileSync(NodePath.join(repoDir, "README.md"), "changed\n");
+        const { manager } = yield* makeManager({
+          textGeneration: {
+            generateBranchName: () =>
+              Effect.succeed({ branch: "header-overflow", slug: "header-overflow", ruleId: "fix" }),
+          },
+        });
+        const error = yield* runStackedAction(manager, {
+          cwd: repoDir,
+          action: "commit",
+          featureBranch: true,
+          commitMessage: "Fix header overflow",
+        }).pipe(Effect.flip);
+        expect(error.message).toContain("slugPattern");
+        expect((yield* runGit(repoDir, ["branch", "--show-current"])).stdout.trim()).toBe("main");
+        expect(
+          (yield* runGit(repoDir, ["branch", "--list", "fix/header-overflow-1"])).stdout.trim(),
+        ).toBe("");
+      }),
+  );
+
+  it.effect("leaves the current branch unchanged when conventions change during generation", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-conventions-manager-");
+      yield* initRepo(repoDir);
+      const conventionsPath = NodePath.join(repoDir, ".conventions.json");
+      const conventions = {
+        version: 1,
+        branches: {
+          description: "Fixes",
+          template: "{type}/{slug}",
+          types: { fix: "Bug fixes" },
+          slugPattern: "^[a-z-]+$",
+        },
+      };
+      NodeFS.writeFileSync(conventionsPath, encodeCliJson(conventions));
+      NodeFS.writeFileSync(NodePath.join(repoDir, "README.md"), "changed\n");
+      const { manager } = yield* makeManager({
+        textGeneration: {
+          generateBranchName: () =>
+            Effect.sync(() => {
+              NodeFS.writeFileSync(
+                conventionsPath,
+                encodeCliJson({
+                  ...conventions,
+                  branches: { ...conventions.branches, template: "team/{type}/{slug}" },
+                }),
+              );
+              return { branch: "header-overflow", slug: "header-overflow", ruleId: "fix" };
+            }),
+        },
+      });
+      const error = yield* runStackedAction(manager, {
+        cwd: repoDir,
+        action: "commit",
+        featureBranch: true,
+        commitMessage: "Fix header overflow",
+      }).pipe(Effect.flip);
+      expect(error.message).toContain("conventions changed");
+      expect((yield* runGit(repoDir, ["branch", "--show-current"])).stdout.trim()).toBe("main");
+      expect(
+        (yield* runGit(repoDir, ["branch", "--list", "fix/header-overflow"])).stdout.trim(),
+      ).toBe("");
+    }),
+  );
+
   it.effect("creates feature branch, commits, and pushes with featureBranch option", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");

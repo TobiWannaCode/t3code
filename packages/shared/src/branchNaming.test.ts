@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
   buildBranchNameCandidate,
+  repositoryBranchNamingPolicy,
   parseBranchTemplate,
   validateBranchNamingPolicy,
   resolveBranchNamingPolicy,
@@ -83,4 +84,54 @@ describe("branch naming policy", () => {
       selectBranchNamingRule({ rules: [policy.rules[0]!], fallbackRuleId: null }, null).id,
     ).toBe("tests");
   });
+});
+
+const conventions = {
+  version: 1 as const,
+  branches: {
+    description: "Choose the type that best matches the task.",
+    template: "{type}/{slug}",
+    types: { feat: "New functionality", fix: "Bug fixes", chore: "Maintenance" },
+    slugPattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+  },
+};
+
+it("translates repository conventions and renders the selected type with a collision suffix", () => {
+  const policy = repositoryBranchNamingPolicy(conventions)!;
+  const rule = selectBranchNamingRule(policy, "fix");
+  expect(buildBranchNameCandidate(rule.template, "Header overflow", 1, policy.slugPattern)).toBe(
+    "fix/header-overflow-1",
+  );
+  expect(policy.description).toBe(conventions.branches.description);
+  expect(() => selectBranchNamingRule(policy, "unknown")).toThrow("unknown rule ID");
+  expect(repositoryBranchNamingPolicy({ version: 1 })).toBeNull();
+});
+
+it.each([
+  { template: "{type}/{slug}/{slug}" },
+  { template: "{type}/{ticket}/{slug}" },
+  { template: "{slug}" },
+  { template: "refs/../{type}/{slug}" },
+  { types: {} },
+  { types: { "Bad Type": "Invalid" } },
+  { slugPattern: "[" },
+])("rejects invalid repository branch configuration %j", (change) => {
+  expect(() =>
+    repositoryBranchNamingPolicy({
+      ...conventions,
+      branches: { ...conventions.branches, ...change },
+    }),
+  ).toThrow();
+});
+
+it("validates the final slug after normalization, truncation, and collision suffixes", () => {
+  expect(
+    buildBranchNameCandidate("fix/{AI_MESSAGE}", "Header Overflow", 0, "^header-overflow$"),
+  ).toBe("fix/header-overflow");
+  expect(() =>
+    buildBranchNameCandidate("fix/{AI_MESSAGE}", "Header Overflow", 1, "^header-overflow$"),
+  ).toThrow("slugPattern");
+  expect(() => buildBranchNameCandidate("fix/{AI_MESSAGE}", "a".repeat(65), 0, "^a{65}$")).toThrow(
+    "slugPattern",
+  );
 });

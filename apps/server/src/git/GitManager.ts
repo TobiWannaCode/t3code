@@ -1,6 +1,17 @@
-import type { BranchNamingPolicy } from "@t3tools/contracts";
-import { normalizeBranchSlug, selectBranchNamingRule } from "@t3tools/shared/branchNaming";
+import {
+  validateConventionalCommit,
+  validateConventionalPullRequest,
+} from "@t3tools/shared/conventions";
+import { sanitizeCommitSubject } from "../textGeneration/TextGenerationUtils.ts";
+import type { CommitConventions } from "@t3tools/contracts";
+import { BranchNamingPolicy } from "@t3tools/contracts";
+import {
+  normalizeBranchSlug,
+  selectBranchNamingRule,
+  repositoryBranchNamingPolicy,
+} from "@t3tools/shared/branchNaming";
 import { availableBranchName } from "./branchNamingGit.ts";
+import { makeRepositoryConventionsReader } from "./repositoryConventions.ts";
 import * as Arr from "effect/Array";
 import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
@@ -522,18 +533,19 @@ function summarizeGitActionResult(
   return { title: "Done" };
 }
 
-function sanitizeCommitMessage(generated: {
-  subject: string;
-  body: string;
-  branch?: string | undefined;
-}): {
+function sanitizeCommitMessage(
+  generated: {
+    subject: string;
+    body: string;
+    branch?: string | undefined;
+  },
+  conventions?: CommitConventions,
+): {
   subject: string;
   body: string;
   branch?: string | undefined;
 } {
-  const rawSubject = generated.subject.trim().split(/\r?\n/g)[0]?.trim() ?? "";
-  const subject = rawSubject.replace(/[.]+$/g, "").trim();
-  const safeSubject = subject.length > 0 ? subject.slice(0, 72).trimEnd() : "Update project files";
+  const safeSubject = sanitizeCommitSubject(generated.subject, conventions);
   return {
     subject: safeSubject,
     body: generated.body.trim(),
@@ -671,6 +683,11 @@ function toPullRequestHeadRemoteInfo(pr: {
 
 export const make = Effect.gen(function* () {
   const gitCore = yield* GitVcsDriver.GitVcsDriver;
+  const readRepositoryConventions = yield* makeRepositoryConventionsReader(gitCore);
+  const readRepositoryBranchNaming = (cwd: string) =>
+    readRepositoryConventions(cwd).pipe(
+      Effect.map((conventions) => repositoryBranchNamingPolicy(conventions ?? { version: 1 })),
+    );
   const sourceControlProviders = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
   const textGeneration = yield* TextGeneration.TextGeneration;
   const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
@@ -734,7 +751,7 @@ export const make = Effect.gen(function* () {
         Effect.orElseSucceed(() => []),
       );
 
-  const resolveStylePolicy = (cwd: string, settings: SourceControlTextGenerationSettings) =>
+  const resolveFallbackStylePolicy = (cwd: string, settings: SourceControlTextGenerationSettings) =>
     Effect.gen(function* () {
       switch (settings.style.mode) {
         case "conventional_commits":
@@ -779,6 +796,34 @@ export const make = Effect.gen(function* () {
         }
       }
     });
+  const resolveStylePolicy = Effect.fn("GitManager.resolveConventions")(function* (
+    cwd: string,
+    settings: SourceControlTextGenerationSettings,
+  ) {
+    const conventions = yield* readRepositoryConventions(cwd);
+    const fallback = yield* resolveFallbackStylePolicy(cwd, settings);
+    return {
+      ...fallback,
+      ...(conventions?.commits
+        ? { commitConventions: conventions.commits, commitInstructions: undefined }
+        : {}),
+      ...(conventions?.pullRequests
+        ? { pullRequestConventions: conventions.pullRequests, changeRequestInstructions: undefined }
+        : {}),
+    };
+  });
+  const enforceConventions = (cwd: string, operation: string, validate: () => void) =>
+    Effect.try({
+      try: validate,
+      catch: (cause) =>
+        new GitManagerError({
+          cwd,
+          operation,
+          detail: `.conventions.json: ${cause instanceof Error ? cause.message : String(cause)}`,
+          cause,
+        }),
+    });
+
   const randomUUIDv4 = (cwd: string) =>
     crypto.randomUUIDv4.pipe(
       Effect.mapError(
@@ -1848,7 +1893,12 @@ export const make = Effect.gen(function* () {
           ...(policy ? { policy } : {}),
           modelSelection: input.settings.modelSelection,
         })
-        .pipe(Effect.map((result) => sanitizeCommitMessage(result)));
+        .pipe(Effect.map((result) => sanitizeCommitMessage(result, policy.commitConventions)));
+
+      if (policy.commitConventions)
+        yield* enforceConventions(input.cwd, "generateCommitMessage", () =>
+          validateConventionalCommit(generated.subject, policy.commitConventions!),
+        );
 
       return {
         subject: generated.subject,
@@ -2039,6 +2089,15 @@ export const make = Effect.gen(function* () {
       ...(policy ? { policy } : {}),
       modelSelection: settings.modelSelection,
     });
+
+    if (policy.pullRequestConventions)
+      yield* enforceConventions(cwd, "generatePrContent", () =>
+        validateConventionalPullRequest(
+          generated,
+          policy.pullRequestConventions!,
+          policy.commitConventions,
+        ),
+      );
 
     const bodyFile = path.join(
       tempDir,
@@ -2570,12 +2629,14 @@ export const make = Effect.gen(function* () {
     commitMessage?: string,
     filePaths?: readonly string[],
   ) {
+    const repositoryBranchNaming = yield* readRepositoryBranchNaming(cwd);
+    const branchNaming = repositoryBranchNaming ?? settings.branchNaming;
     const suggestion = yield* resolveCommitAndBranchSuggestion({
       cwd,
       branch,
       ...(commitMessage ? { commitMessage } : {}),
       ...(filePaths ? { filePaths } : {}),
-      includeBranch: !settings.branchNaming,
+      includeBranch: !branchNaming,
       settings,
     });
     if (!suggestion) {
@@ -2587,17 +2648,16 @@ export const make = Effect.gen(function* () {
     }
 
     let resolvedBranch: string;
-    if (settings.branchNaming) {
+    if (branchNaming) {
       const generated = yield* textGeneration.generateBranchName({
         cwd,
         message: suggestion.commitMessage,
         modelSelection: settings.modelSelection,
-        branchNamingPolicy: settings.branchNaming,
+        branchNamingPolicy: branchNaming,
       });
       const selected = yield* Effect.try({
         try: () => ({
-          template: selectBranchNamingRule(settings.branchNaming!, generated.ruleId ?? null)
-            .template,
+          template: selectBranchNamingRule(branchNaming, generated.ruleId ?? null).template,
           slug: normalizeBranchSlug(generated.slug ?? ""),
         }),
         catch: (cause) =>
@@ -2613,6 +2673,9 @@ export const make = Effect.gen(function* () {
         cwd,
         selected.template,
         selected.slug,
+        undefined,
+        undefined,
+        branchNaming.slugPattern,
       ).pipe(
         Effect.mapError(
           (cause) =>
@@ -2628,6 +2691,20 @@ export const make = Effect.gen(function* () {
       const preferredBranch = suggestion.branch ?? sanitizeFeatureBranchName(suggestion.subject);
       const existingBranchNames = yield* gitCore.listLocalBranchNames(cwd);
       resolvedBranch = resolveAutoFeatureBranchName(existingBranchNames, preferredBranch);
+    }
+
+    if (
+      !Schema.toEquivalence(Schema.NullOr(BranchNamingPolicy))(
+        yield* readRepositoryBranchNaming(cwd),
+        repositoryBranchNaming,
+      )
+    ) {
+      return yield* new GitManagerError({
+        operation: "runFeatureBranchStep",
+        cwd,
+        detail:
+          "Repository branch conventions changed during generation. Retry to use the new rules.",
+      });
     }
 
     yield* gitCore.createRef({ cwd, refName: resolvedBranch });

@@ -377,7 +377,7 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
       });
 
       return {
-        subject: sanitizeCommitSubject(generated.subject),
+        subject: sanitizeCommitSubject(generated.subject, input.policy?.commitConventions),
         body: generated.body.trim(),
         ...("branch" in generated && typeof generated.branch === "string"
           ? { branch: sanitizeFeatureBranchName(generated.branch) }

@@ -6,6 +6,8 @@ import {
   normalizeBranchSlug,
   selectBranchNamingRule,
   validateBranchNamingPolicy,
+  validateBranchSlug,
+  repositoryBranchNamingPolicy,
 } from "@t3tools/shared/branchNaming";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
@@ -16,12 +18,16 @@ import { ProviderRegistry } from "../provider/Services/ProviderRegistry.ts";
 import { TextGeneration } from "../textGeneration/TextGeneration.ts";
 import { buildGeneratedWorktreeBranchName } from "./branchNamingLegacy.ts";
 
+import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
+import { makeRepositoryConventionsReader } from "./repositoryConventions.ts";
+
 const encodeConfiguration = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
 export class BranchNamingService extends Context.Service<
   BranchNamingService,
   {
     readonly fingerprint: (
+      cwd: string,
       projectId?: ProjectId | null,
     ) => Effect.Effect<string, TextGenerationError>;
     readonly generate: (input: {
@@ -30,7 +36,13 @@ export class BranchNamingService extends Context.Service<
       projectId?: ProjectId | null;
       attachments?: readonly ChatAttachment[];
     }) => Effect.Effect<
-      { template: string; slug: string; fingerprint: string; legacyBranch?: string },
+      {
+        template: string;
+        slug: string;
+        fingerprint: string;
+        slugPattern?: string;
+        legacyBranch?: string;
+      },
       TextGenerationError
     >;
   }
@@ -42,22 +54,27 @@ export const layer = Layer.effect(
     const settingsService = yield* ServerSettingsService;
     const providers = yield* ProviderRegistry;
     const generation = yield* TextGeneration;
+    const git = yield* GitVcsDriver;
+    const readRepositoryConventions = yield* makeRepositoryConventionsReader(git);
     const capacity = yield* Semaphore.make(2);
     const configuration = Effect.fn("branchNaming.configuration")(
-      function* (projectId: ProjectId | null | undefined) {
+      function* (cwd: string, projectId: ProjectId | null | undefined) {
         const settings = resolveProjectSettings(
           yield* settingsService.getSettings,
           projectId ?? null,
         ).settings;
+        const policy =
+          repositoryBranchNamingPolicy((yield* readRepositoryConventions(cwd)) ?? { version: 1 }) ??
+          settings.branchNaming;
         const modelSelection =
           settings.sourceControlWriterModelSelection === null
             ? settings.textGenerationModelSelection
             : resolveSourceControlWriterModelSelection(settings, yield* providers.getProviders);
         return {
-          policy: settings.branchNaming,
+          policy,
           modelSelection,
           fingerprint: NodeCrypto.createHash("sha256")
-            .update(yield* encodeConfiguration([settings.branchNaming, modelSelection]))
+            .update(yield* encodeConfiguration([policy, modelSelection]))
             .digest("hex"),
         };
       },
@@ -65,18 +82,18 @@ export const layer = Layer.effect(
         (cause) =>
           new TextGenerationError({
             operation: "branchNaming",
-            detail: "Could not read branch naming configuration.",
+            detail: `Could not read branch naming configuration: ${cause.message}`,
             cause,
           }),
       ),
     );
     return BranchNamingService.of({
-      fingerprint: (projectId) =>
-        configuration(projectId).pipe(Effect.map((config) => config.fingerprint)),
+      fingerprint: (cwd, projectId) =>
+        configuration(cwd, projectId).pipe(Effect.map((config) => config.fingerprint)),
       generate: (input) =>
         capacity.withPermits(1)(
           Effect.gen(function* () {
-            const config = yield* configuration(input.projectId);
+            const config = yield* configuration(input.cwd, input.projectId);
             const error = validateBranchNamingPolicy(config.policy);
             if (error)
               return yield* new TextGenerationError({ operation: "branchNaming", detail: error });
@@ -101,16 +118,25 @@ export const layer = Layer.effect(
                 }),
               );
             return yield* Effect.try({
-              try: () => ({
-                template: config.policy
-                  ? selectBranchNamingRule(config.policy, result.ruleId ?? null).template
-                  : "t3code/{AI_MESSAGE}",
-                slug: normalizeBranchSlug(config.policy ? (result.slug ?? "") : result.branch),
-                fingerprint: config.fingerprint,
-                ...(!config.policy
-                  ? { legacyBranch: buildGeneratedWorktreeBranchName(result.branch) }
-                  : {}),
-              }),
+              try: () => {
+                const slug = normalizeBranchSlug(
+                  config.policy ? (result.slug ?? "") : result.branch,
+                );
+                validateBranchSlug(slug, config.policy?.slugPattern);
+                return {
+                  template: config.policy
+                    ? selectBranchNamingRule(config.policy, result.ruleId ?? null).template
+                    : "t3code/{AI_MESSAGE}",
+                  slug,
+                  ...(config.policy?.slugPattern !== undefined
+                    ? { slugPattern: config.policy.slugPattern }
+                    : {}),
+                  fingerprint: config.fingerprint,
+                  ...(!config.policy
+                    ? { legacyBranch: buildGeneratedWorktreeBranchName(result.branch) }
+                    : {}),
+                };
+              },
               catch: (cause) =>
                 new TextGenerationError({
                   operation: "branchNaming",

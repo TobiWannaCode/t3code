@@ -20,6 +20,7 @@ export type SettingsPath =
   | "/settings/providers"
   | "/settings/integrations"
   | "/settings/source-control"
+  | "/settings/conventions"
   | "/settings/connections"
   | "/settings/archived";
 
@@ -88,6 +89,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/providers": "Providers",
   "/settings/integrations": "Integrations",
   "/settings/source-control": "Source Control",
+  "/settings/conventions": "Conventions",
   "/settings/connections": "Connections",
   "/settings/archived": "Archive",
 };
@@ -649,16 +651,23 @@ export const SETTINGS_SEARCH_ITEMS = [
     scope: "environment-defaults",
   },
   {
+    id: "repository-conventions",
+    title: "Repository conventions",
+    to: "/settings/conventions",
+    scope: "project-defaults",
+    searchTerms: [".conventions.json branches commits pullRequests naming rules AGENTS.md"],
+  },
+  {
     id: "branch-naming",
     title: "Branch naming rules",
-    to: "/settings/source-control",
+    to: "/settings/conventions",
     scope: "project-defaults",
     searchTerms: ["branch naming conventions formats rules AI message regenerate"],
   },
   {
     id: "source-control-writing-style",
     title: "Source control writing style",
-    to: "/settings/source-control",
+    to: "/settings/conventions",
     searchTerms: [
       "repository conventions conventional commits custom instructions change descriptions request titles",
     ],
@@ -667,14 +676,14 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "follow-change-request-templates",
     title: "Follow change request templates",
-    to: "/settings/source-control",
+    to: "/settings/conventions",
     searchTerms: ["repository pr pull request description structure"],
     environmentOnly: true,
   },
   {
     id: "source-control-writer-model",
     title: "Source control writer model",
-    to: "/settings/source-control",
+    to: "/settings/conventions",
     searchTerms: [
       "override generated commit change request pr titles descriptions branch bookmark",
     ],
@@ -802,6 +811,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/providers": null,
   "/settings/integrations": null,
   "/settings/source-control": "environment-defaults",
+  "/settings/conventions": "project-defaults",
   "/settings/connections": "connections",
   "/settings/archived": "project-defaults",
 };

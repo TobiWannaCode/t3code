@@ -1,4 +1,4 @@
-import { TextGenerationError } from "@t3tools/contracts";
+import { TextGenerationError, type CommitConventions } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
@@ -24,7 +24,9 @@ export function limitSection(value: string, maxChars: number): string {
 }
 
 /** Normalise a raw commit subject to imperative-mood, ≤72 chars, no trailing period. */
-export function sanitizeCommitSubject(raw: string): string {
+export function sanitizeCommitSubject(raw: string, conventions?: CommitConventions): string {
+  // Repository templates are validated before applying the generated message; never truncate their subject or fixed text.
+  if (conventions) return raw.trim();
   const singleLine = raw.trim().split(/\r?\n/g)[0]?.trim() ?? "";
   const withoutTrailingPeriod = singleLine.replace(/[.]+$/g, "").trim();
   if (withoutTrailingPeriod.length === 0) {

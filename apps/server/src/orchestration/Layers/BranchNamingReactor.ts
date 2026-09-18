@@ -257,7 +257,10 @@ export const BranchNamingReactorLive = Layer.effect(
                 "The chat workspace changed during generation. Regenerate in the current workspace.",
               );
 
-            if ((yield* naming.fingerprint(thread.projectId)) !== candidate.fingerprint)
+            if (
+              (yield* naming.fingerprint(candidate.cwd!, thread.projectId)) !==
+              candidate.fingerprint
+            )
               return yield* branchNamingError(
                 "Branch naming settings changed. Regenerate to use the new rules.",
               );
@@ -280,6 +283,7 @@ export const BranchNamingReactorLive = Layer.effect(
               candidate.slug!,
               candidate.expectedBranch,
               candidate.legacyBranch,
+              candidate.slugPattern,
             );
             const prepared = {
               target,

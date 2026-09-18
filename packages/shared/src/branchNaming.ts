@@ -1,4 +1,4 @@
-import type { BranchNamingPolicy } from "@t3tools/contracts";
+import type { BranchNamingPolicy, RepositoryConventions } from "@t3tools/contracts";
 
 const TOKEN = "{AI_MESSAGE}";
 const bytes = (value: string) => new TextEncoder().encode(value).length;
@@ -38,6 +38,11 @@ export function parseBranchTemplate(template: string): { prefix: string; suffix:
 
 export function validateBranchNamingPolicy(policy: BranchNamingPolicy | null): string | null {
   if (!policy) return null;
+  try {
+    if (policy.slugPattern !== undefined) new RegExp(`^(?:${policy.slugPattern})$`, "u");
+  } catch {
+    return "slugPattern must be a valid regular expression.";
+  }
   if (policy.rules.length < 1 || policy.rules.length > 50) return "Add between 1 and 50 rules.";
   const ids = new Set<string>();
   const templates = new Set<string>();
@@ -76,6 +81,7 @@ export function buildBranchNameCandidate(
   template: string,
   slug: string,
   collisionIndex = 0,
+  slugPattern?: string,
 ): string {
   const { prefix, suffix } = parseBranchTemplate(template);
   if (!Number.isInteger(collisionIndex) || collisionIndex < 0 || collisionIndex > 100)
@@ -84,6 +90,7 @@ export function buildBranchNameCandidate(
   const limit = Math.min(64 - collision.length, 240 - bytes(prefix + suffix) - collision.length);
   const fragment = normalizeBranchSlug(slug).slice(0, limit).replace(/-+$/g, "");
   if (!fragment) throw new Error("The format leaves no room for a branch description.");
+  validateBranchSlug(`${fragment}${collision}`, slugPattern);
   const name = `${prefix}${fragment}${collision}${suffix}`;
   const error = validateBranchName(name);
   if (error) throw new Error(error);
@@ -114,4 +121,48 @@ export function selectBranchNamingRule(policy: BranchNamingPolicy, ruleId: strin
       "No branch rule matched. Configure a fallback or adjust the rule descriptions.",
     );
   return rule;
+}
+
+export function validateBranchSlug(slug: string, pattern?: string): void {
+  if (pattern !== undefined && !new RegExp(`^(?:${pattern})$`, "u").test(slug)) {
+    throw new Error(
+      "The generated branch slug does not match slugPattern. Adjust the conventions or regenerate the branch name.",
+    );
+  }
+}
+
+export function repositoryBranchNamingPolicy(
+  conventions: RepositoryConventions,
+): BranchNamingPolicy | null {
+  const branches = conventions.branches;
+  if (!branches) return null;
+  if (
+    branches.template.split("{type}").length !== 2 ||
+    branches.template.split("{slug}").length !== 2 ||
+    /[{}]/u.test(branches.template.replace("{type}", "").replace("{slug}", ""))
+  ) {
+    throw new Error(
+      "The branch template must contain exactly one {type} and one {slug}, with no other tokens.",
+    );
+  }
+  const policy: BranchNamingPolicy = {
+    description: branches.description,
+    ...(branches.examples ? { examples: branches.examples } : {}),
+    slugPattern: branches.slugPattern,
+    fallbackRuleId: null,
+    rules: Object.entries(branches.types).map(([type, description]) => {
+      if (!/^[a-z][a-z0-9-]*$/.test(type))
+        throw new Error(
+          "Branch types must use lowercase letters, digits, and hyphens, starting with a letter.",
+        );
+      return {
+        id: type,
+        description,
+        template: branches.template.replace("{type}", type).replace("{slug}", "{AI_MESSAGE}"),
+      };
+    }),
+  };
+  const error = validateBranchNamingPolicy(policy);
+  if (error) throw new Error(error);
+  return policy;
 }

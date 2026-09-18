@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./conventions": {
+      "types": "./src/conventions.ts",
+      "import": "./src/conventions.ts"
+    },
     "./chatOrganization": {
       "types": "./src/chatOrganization.ts",
       "import": "./src/chatOrganization.ts"

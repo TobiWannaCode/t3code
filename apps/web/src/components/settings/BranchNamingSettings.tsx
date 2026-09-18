@@ -14,13 +14,13 @@ export function BranchNamingSettingsSection() {
   const update = useUpdateScopedSettings();
   const { search } = useSettingsScope();
   return (
-    <SettingsSection title="Branch naming">
+    <SettingsSection title="Branch defaults">
       <SettingsRow
         {...searchableSetting("branch-naming")}
         title="Branch naming rules"
         serverScoped
         settingKeys={["branchNaming"]}
-        description="Choose formats for generated branch names. Project settings can override these defaults."
+        description="Choose fallback formats for generated branch names. A repository’s .conventions.json branch rules take priority, followed by project settings and these defaults."
       >
         {mixed && (
           <p className="mb-3 text-sm text-muted-foreground">

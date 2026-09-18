@@ -1,4 +1,3 @@
-import { BranchNamingSettingsSection } from "./BranchNamingSettings";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { ChevronDownIcon } from "lucide-react";
 import * as Duration from "effect/Duration";
@@ -58,7 +57,6 @@ import {
   type Icon,
 } from "../Icons";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
-import { SourceControlWritingSettingsSection } from "./SourceControlWritingSettings";
 import {
   PolicyTooltip,
   SettingResetButton,
@@ -600,9 +598,6 @@ export function SourceControlSettingsPanel() {
           onScan={handleScan}
         />
       )}
-
-      <SourceControlWritingSettingsSection />
-      <BranchNamingSettingsSection />
     </SettingsPageContainer>
   );
 }

@@ -1,3 +1,4 @@
+import { CommitConventions, PullRequestConventions } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
 export const TextGenerationPolicyKind = Schema.Literals([
@@ -10,6 +11,8 @@ export type TextGenerationPolicyKind = typeof TextGenerationPolicyKind.Type;
 
 export const TextGenerationPolicy = Schema.Struct({
   kind: TextGenerationPolicyKind,
+  commitConventions: Schema.optional(CommitConventions),
+  pullRequestConventions: Schema.optional(PullRequestConventions),
   commitInstructions: Schema.optional(Schema.String),
   changeRequestInstructions: Schema.optional(Schema.String),
   branchInstructions: Schema.optional(Schema.String),

@@ -6,7 +6,13 @@ export const BranchNamingRule = Schema.Struct({
   description: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1000)),
 });
 export type BranchNamingRule = typeof BranchNamingRule.Type;
+
 export const BranchNamingPolicy = Schema.Struct({
+  examples: Schema.optionalKey(Schema.Array(Schema.String)),
+  description: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(4000))),
+  slugPattern: Schema.optionalKey(
+    Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+  ),
   rules: Schema.Array(BranchNamingRule).check(Schema.isMinLength(1), Schema.isMaxLength(50)),
   fallbackRuleId: Schema.NullOr(Schema.String),
 });
@@ -37,6 +43,7 @@ export const BranchNamingOperation = Schema.Struct({
   legacyBranch: Schema.optional(Schema.String),
   template: Schema.optional(Schema.String),
   slug: Schema.optional(Schema.String),
+  slugPattern: Schema.optional(Schema.String),
   target: Schema.optional(Schema.String),
   oldOid: Schema.optional(Schema.String),
   upstreamRemote: Schema.optional(Schema.NullOr(Schema.String)),

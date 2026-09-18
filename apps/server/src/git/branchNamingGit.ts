@@ -92,6 +92,7 @@ export const availableBranchName = (
   slug: string,
   oldBranch?: string,
   legacyBranch?: string,
+  slugPattern?: string,
 ) =>
   Effect.gen(function* () {
     const names = yield* git.listLocalBranchNames(cwd);
@@ -100,7 +101,7 @@ export const availableBranchName = (
         try: () =>
           legacyBranch
             ? `${legacyBranch}${index ? `-${index}` : ""}`
-            : buildBranchNameCandidate(template, slug, index),
+            : buildBranchNameCandidate(template, slug, index, slugPattern),
         catch: (cause) => branchNamingError(String(cause)),
       });
       if (

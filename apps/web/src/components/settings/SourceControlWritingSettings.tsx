@@ -125,13 +125,13 @@ export function SourceControlWritingSettingsSection() {
   const writerModelDisabledReason = useScopedModelDisabledReason(settings, instanceEntries);
 
   return (
-    <SettingsSection id="source-control-text-generation" title="Text generation">
+    <SettingsSection id="source-control-text-generation" title="Commit and pull request defaults">
       <SettingsRow
         serverScoped
         settingKeys={["sourceControlWritingStyle"]}
         mixed={writingStyleMixed}
         {...searchableSetting("source-control-writing-style")}
-        description={MODE_OPTIONS[style.mode].description}
+        description={`${MODE_OPTIONS[style.mode].description} Applies when the corresponding .conventions.json section is absent.`}
         resetAction={
           isSourceControlWritingStyleDirty ? (
             <SettingResetButton
@@ -248,7 +248,7 @@ export function SourceControlWritingSettingsSection() {
         settingKeys={["sourceControlWritingStyle"]}
         mixed={templatesMixed}
         {...searchableSetting("follow-change-request-templates")}
-        description="Use the repository's template for change request descriptions when available."
+        description="Use the repository’s pull request template when available. Required sections in .conventions.json still take priority."
         resetAction={
           templatesMixed ||
           style.followChangeRequestTemplates !== defaults.followChangeRequestTemplates ? (
